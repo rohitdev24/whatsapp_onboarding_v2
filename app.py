@@ -2,17 +2,18 @@ import streamlit as st
 import os
 import zipfile
 from datetime import datetime
-import time
 import base64
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
-# -- Custom CSS for full theme (Glassmorphism, gradients, animation) --
+# -- Custom CSS for full theme (no top margin, glassmorphism, gradients, animation) --
 st.markdown("""
     <style>
-        body, .stApp {
+        html, body, .stApp {
             background: linear-gradient(135deg, #100c2a 0%, #3a2b7c 100%) !important;
             color: #f0f0fa;
+            padding-top: 0px !important;
+            margin-top: 0px !important;
         }
         .glass-card {
             background: rgba(34, 34, 51, 0.69);
@@ -33,7 +34,7 @@ st.markdown("""
             border: 1px solid #3311aa33;
         }
         .member-list-item {
-            display: flex; align-items: center; 
+            display: flex; align-items: center;
             margin-bottom: 0.9rem;
         }
         .avatar {
@@ -120,6 +121,47 @@ st.markdown("""
             color: #130b2a !important;
             font-weight: 700;
         }
+        /* Remove possible empty widget at top */
+        .block-container > div:first-child:empty {
+            display: none !important;
+        }
+        .tooltip-wrap {
+            display: inline-block;
+            position: relative;
+        }
+        .tooltip-icon {
+            color: #6be0ff;
+            cursor: pointer;
+            font-size: 1.08em;
+            margin-left: 0.28em;
+            vertical-align: middle;
+        }
+        .tooltip-box {
+            visibility: hidden;
+            width: 380px;
+            background: #25204aee;
+            color: #b8e9ff;
+            text-align: left;
+            border-radius: 8px;
+            padding: 0.85em 1em;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -190px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.97em;
+            box-shadow: 0 2px 16px #2eebfa55;
+        }
+        .tooltip-wrap:hover .tooltip-box,
+        .tooltip-wrap:active .tooltip-box {
+            visibility: visible;
+            opacity: 1;
+        }
+        @media (max-width: 600px) {
+            .tooltip-box { width: 90vw; left: 5vw; margin-left: 0; }
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -191,16 +233,16 @@ with st.container():
                 with mcols[1]:
                     age = st.number_input("Age", min_value=0, max_value=120, value=member.get("age", 0), key=f"age_{idx}")
                 with mcols[2]:
-                    avatar = st.file_uploader("Avatar/Photo", type=["png", "jpg", "jpeg"], key=f"avatar_{idx}")
+                    passport_photo = st.file_uploader("Passport Size Photo (optional for minors)", type=["png", "jpg", "jpeg"], key=f"photo_{idx}")
                     avatar_data = None
-                    if avatar:
-                        avatar_data = base64.b64encode(avatar.getvalue()).decode()
+                    if passport_photo:
+                        avatar_data = base64.b64encode(passport_photo.getvalue()).decode()
                         st.markdown(
                             f"<img src='data:image/png;base64,{avatar_data}' class='avatar' style='width:64px;height:64px;margin-top:0.5em;'>",
                             unsafe_allow_html=True
                         )
                 member['name'], member['age'] = name, age
-                member['avatar'], member['avatar_data'] = avatar, avatar_data
+                member['avatar'], member['avatar_data'] = passport_photo, avatar_data
 
                 # -- Documents --
                 docs = {}
@@ -208,6 +250,7 @@ with st.container():
                 if name and age >= 0:
                     if age < 18:
                         docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{idx}")
+                        docs['Minor PAN Card (optional)'] = st.file_uploader("Minor PAN Card (optional)", type=["jpg", "jpeg", "png", "pdf"], key=f"minorpancard_{idx}")
                         guardian_list = []
                         num_guardians = st.number_input(f"Number of guardians?", min_value=1, max_value=2, value=1, key=f"guardian_count_{idx}")
                         for g in range(int(num_guardians)):
@@ -225,7 +268,7 @@ with st.container():
                         docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{idx}")
                         docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}")
                         docs['Cancelled Cheque/Bank Statement'] = st.file_uploader("Cancelled Cheque or Bank Statement", key=f"cheque_{idx}")
-                        docs['Photo'] = avatar  # Use avatar as photo
+                        docs['Passport Size Photo'] = passport_photo
                         docs['Email'] = st.text_input("Email", key=f"email_{idx}", value=member.get("email", ""))
                         docs['Phone'] = st.text_input("Phone Number", key=f"phone_{idx}", value=member.get("phone", ""))
                         docs['Mother Name'] = st.text_input("Mother's Name", key=f"mother_{idx}", value=member.get("mother", ""))
@@ -242,10 +285,9 @@ with st.container():
                                 nominee['Income'] = st.text_input("Income", key=f"nominee_income_{idx}_{n}")
                                 nominee_list.append(nominee)
                         docs['Nominees'] = nominee_list
-                        # Validation for major
                         all_fields &= all([
                             docs['E-Aadhaar'], docs['PAN Card'], docs['Cancelled Cheque/Bank Statement'],
-                            docs['Email'], docs['Phone'], docs['Mother Name'], docs['Place of Birth']
+                            docs['Email'], docs['Phone'], docs['Mother Name'], docs['Place of Birth'], passport_photo
                         ])
                         for nm in nominee_list:
                             all_fields &= all(nm.get(x) for x in nm)
@@ -293,10 +335,10 @@ if members:
                     name = member['name']
                     folder = os.path.join(base_dir, name.replace(" ", "_"))
                     os.makedirs(folder, exist_ok=True)
-                    # Save avatar if any
+                    # Save passport photo if any
                     if member.get("avatar"):
                         ext = member['avatar'].name.split('.')[-1]
-                        with open(os.path.join(folder, f"avatar.{ext}"), "wb") as f:
+                        with open(os.path.join(folder, f"passport_photo.{ext}"), "wb") as f:
                             f.write(member['avatar'].getvalue())
                     docs = member.get('docs', {})
                     for key, file in docs.items():
@@ -308,9 +350,14 @@ if members:
                                         fname = f"{key}_{idx2+1}_{subkey.replace(' ', '_')}.{ext}"
                                         with open(os.path.join(folder, fname), "wb") as f:
                                             f.write(subfile.read())
-                        elif hasattr(file, 'read'):
+                        elif hasattr(file, 'read') and key not in ['Passport Size Photo', 'Minor PAN Card (optional)']:
                             ext = file.name.split('.')[-1]
                             fname = f"{key.replace(' ', '_')}.{ext}"
+                            with open(os.path.join(folder, fname), "wb") as f:
+                                f.write(file.read())
+                        elif key == 'Minor PAN Card (optional)' and hasattr(file, 'read'):
+                            ext = file.name.split('.')[-1]
+                            fname = f"minor_pan_card.{ext}"
                             with open(os.path.join(folder, fname), "wb") as f:
                                 f.write(file.read())
                 zip_path = f"{head_name.replace(' ', '_')}_onboarding.zip"
@@ -327,7 +374,13 @@ if members:
                 - Post confirmation, approve the following emails from BSE StarMF:
                     1. **E-log**: After verifying AOF details
                     2. **Nominee Authentication**
-                    3. **E-Mandate**: Authorizes BSE to debit your account for future SIPs or lump sum investments.
-                """)
-            st.info("The E-mandate sets a max transaction limit, ensuring secure investments through your account only.")
+                    3. **E-Mandate** <span class="tooltip-wrap"><span class="tooltip-icon">ℹ️</span>
+                        <span class="tooltip-box">
+                            This mandate authorizes BSE Star MF to debit funds exclusively from your registered bank account for investment purposes.<br>
+                            The maximum transaction limit specified ensures that only you can initiate investments in your name.<br>
+                            This e-mandate will apply to all SIPs and lump sum transactions, and serves as a secure fallback should internet banking be temporarily unavailable.
+                        </span>
+                    </span>: Authorizes BSE to debit your account for future SIPs or lump sum investments.
+                """, unsafe_allow_html=True)
+            st.info("The e-mandate provides a secure, single point of authorization for all your mutual fund investments through BSE Star MF.")
     st.markdown("</div></div>", unsafe_allow_html=True)
