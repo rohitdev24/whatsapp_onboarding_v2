@@ -56,7 +56,7 @@ def upload_docs(name, is_minor):
             docs['Place of Birth'] = st.text_input("Place of Birth", key=f"birthplace_{name}")
 
             nominee_list = []
-            num_nominees = st.slider(f"How many nominees for {name}?", min_value=1, max_value=3, value=1, key=f"nominee_count_{name}")
+            num_nominees = st.number_input(f"Number of nominees for {name}?", min_value=1, max_value=3, value=1, key=f"nominee_count_{name}")
             for n in range(int(num_nominees)):
                 with st.expander(f"Nominee {n+1} Details"):
                     nominee = {}
@@ -71,7 +71,7 @@ def upload_docs(name, is_minor):
         else:
             docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{name}")
             guardian_list = []
-            num_guardians = st.slider(f"How many guardians for {name}?", min_value=1, max_value=2, value=1, key=f"guardian_count_{name}")
+            num_guardians = st.number_input(f"Number of guardians for {name}?", min_value=1, max_value=2, value=1, key=f"guardian_count_{name}")
             for g in range(int(num_guardians)):
                 with st.expander(f"Guardian {g+1} Details"):
                     guardian = {}
@@ -87,7 +87,7 @@ def upload_docs(name, is_minor):
 with st.form("onboarding_form"):
     head_name = st.text_input("Family Head Name")
     head_age = st.number_input("Family Head Age", min_value=0, max_value=120)
-    members_count = st.slider("How many family members want to invest?", min_value=0, max_value=10)
+    members_count = st.number_input("How many family members want to invest?", min_value=0, max_value=10, step=1)
     members = []
     for i in range(int(members_count)):
         col1, col2 = st.columns(2)
