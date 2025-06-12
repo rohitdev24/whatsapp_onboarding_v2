@@ -6,7 +6,7 @@ import base64
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
-# -- CSS for improved look & cursor fix --
+# --------- CSS (no cropping, no typing cursor, beautiful UI) ----------
 st.markdown("""
     <style>
         html, body, .stApp {
@@ -16,40 +16,54 @@ st.markdown("""
             margin-top: 0px !important;
             user-select: none !important;
         }
-        .block-container {
-            padding-top: 0rem !important;
-        }
+        .block-container { padding-top: 0.2rem !important; }
         .glass-header {
-            padding: 1.6rem 0 1.1rem 0;
+            padding: 2.3rem 0 0.7rem 0;
             margin: 0 auto 2rem auto;
             max-width: 820px;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: flex-start;
+            gap: 1.2rem;
         }
         .glass-header-logo {
-            width: 64px;
-            margin-right: 1.2rem;
+            width: 80px;
+            height: 80px;
+            min-width: 80px;
+            min-height: 80px;
+            max-width: 80px;
+            max-height: 80px;
             filter: drop-shadow(0 2px 16px #3a2b7c88);
-            border-radius: 18px;
+            border-radius: 22px;
+            background: white;
+            padding: 0.15em;
+            object-fit: contain;
+            box-sizing: border-box;
+        }
+        .glass-header-titles {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
         }
         .glass-header-title {
-            font-size: 2.35rem;
+            font-size: 2.4rem;
             font-weight: 900;
             background: linear-gradient(90deg,#b8e9ff 10%,#d6bfff 90%);
             -webkit-background-clip: text;
             color: transparent;
             letter-spacing: .01em;
+            margin-bottom: 0.18em;
         }
         .glass-header-contact {
             color: #aeefff;
-            font-size: 1.12rem;
-            margin-left: 5.1rem;
+            font-size: 1.10rem;
+            margin-left: 0.1rem;
             margin-top: 0.1em;
         }
         .glass-card {
             background: rgba(34, 34, 51, 0.92);
-            border-radius: 20px;
+            border-radius: 22px;
             box-shadow: 0 8px 40px #8775e0cc, 0 1.5px 12px #00000033;
             backdrop-filter: blur(14px);
             padding: 2.2rem 2rem 1.5rem 2rem;
@@ -198,20 +212,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# -- No empty widget above main content; all widgets below top header --
-
-# -- Sticky Glass Header (not a Streamlit widget, just HTML) --
+# --------- Sticky Header (NO cropping, NO typing cursor) ----------
 st.markdown("""
 <div class="glass-header" style="user-select:none;">
     <img src="https://raw.githubusercontent.com/rohitdev24/whatsapp_onboarding_v2/main/logo.png" class="glass-header-logo">
-    <div>
-        <span class="glass-header-title">✨ Onboarding Portal</span><br>
+    <div class="glass-header-titles">
+        <span class="glass-header-title">✨ Onboarding Portal</span>
         <span class="glass-header-contact">Contact: <b>Contactus@sssdistributors.com</b></span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# -- SideBar --
+# --------- Sidebar progress ----------
 with st.sidebar:
     st.markdown("<div class='glass-sidebar'>", unsafe_allow_html=True)
     st.image(
@@ -236,10 +248,11 @@ with st.sidebar:
         )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -- Main Card Layout --
+# --------- Main Glass Card ----------
 with st.container():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("---")
+
     # -- Family Head Details --
     with st.form("family_form", clear_on_submit=False):
         cols = st.columns([2,1,1])
@@ -251,30 +264,46 @@ with st.container():
             members_count = st.number_input("How many members wish to invest?", min_value=1, max_value=10, step=1, value=1)
         family_submitted = st.form_submit_button("Confirm Family Info")
 
-    # -- Init session state for members --
-    if 'members' not in st.session_state or family_submitted:
-        st.session_state['members'] = [
+    # --------- Session state for members and active tab ----------
+    if "members" not in st.session_state or family_submitted:
+        st.session_state["members"] = [
             {"name": "", "age": 0, "avatar": None, "avatar_data": None, "is_complete": False}
             for _ in range(int(members_count))
         ]
+    members = st.session_state["members"]
 
-    # -- Member Tabs --
-    members = st.session_state['members']
-    if members:
-        st.markdown("### <span style='color:#b8e9ff'>Family Members</span>", unsafe_allow_html=True)
-        tab_names = [m["name"] if m["name"] else f"👤 Member {i+1}" for i,m in enumerate(members)]
-        member_tabs = st.tabs(tab_names)
-        completed_forms = 0
+    # --- Tab persistence logic ---
+    tab_names = [m["name"] if m["name"] else f"👤 Member {i+1}" for i,m in enumerate(members)]
+    if "active_tab" not in st.session_state or len(tab_names) != len(st.session_state.get("tab_names", [])):
+        st.session_state.active_tab = 0
+        st.session_state.tab_names = tab_names
+    else:
+        st.session_state.tab_names = tab_names
 
-        for idx, (tab, member) in enumerate(zip(member_tabs, members)):
+    # Use selectbox for mobile and to keep active tab even after rerun
+    selected_tab = st.selectbox(
+        "Select Member",
+        options=range(len(tab_names)),
+        format_func=lambda x: tab_names[x],
+        index=st.session_state.active_tab,
+        key="select_member_tab",
+    )
+    st.session_state.active_tab = selected_tab
+
+    member_tabs = st.tabs(tab_names)
+    completed_forms = 0
+
+    for idx, tab in enumerate(member_tabs):
+        # Only render the selected tab's content (fixes tab reset on rerun)
+        if idx == st.session_state.active_tab:
             with tab:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
                 st.subheader(f"Member {idx+1} Details")
                 mcols = st.columns([2,1,1])
                 with mcols[0]:
-                    name = st.text_input("Full Name", value=member.get("name", ""), key=f"name_{idx}", help="Enter legal name as per ID")
+                    name = st.text_input("Full Name", value=members[idx].get("name", ""), key=f"name_{idx}", help="Enter legal name as per ID")
                 with mcols[1]:
-                    age = st.number_input("Age", min_value=0, max_value=120, value=member.get("age", 0), key=f"age_{idx}")
+                    age = st.number_input("Age", min_value=0, max_value=120, value=members[idx].get("age", 0), key=f"age_{idx}")
                 with mcols[2]:
                     passport_photo = st.file_uploader("Passport Size Photo (optional for minors)", type=["png", "jpg", "jpeg"], key=f"photo_{idx}")
                     avatar_data = None
@@ -284,8 +313,8 @@ with st.container():
                             f"<img src='data:image/png;base64,{avatar_data}' class='avatar' style='width:64px;height:64px;margin-top:0.5em;'>",
                             unsafe_allow_html=True
                         )
-                member['name'], member['age'] = name, age
-                member['avatar'], member['avatar_data'] = passport_photo, avatar_data
+                members[idx]['name'], members[idx]['age'] = name, age
+                members[idx]['avatar'], members[idx]['avatar_data'] = passport_photo, avatar_data
 
                 # -- Documents --
                 docs = {}
@@ -313,10 +342,10 @@ with st.container():
                         docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}")
                         docs['Cancelled Cheque/Bank Statement'] = st.file_uploader("Cancelled Cheque or Bank Statement", key=f"cheque_{idx}")
                         docs['Passport Size Photo'] = passport_photo
-                        docs['Email'] = st.text_input("Email", key=f"email_{idx}", value=member.get("email", ""))
-                        docs['Phone'] = st.text_input("Phone Number", key=f"phone_{idx}", value=member.get("phone", ""))
-                        docs['Mother Name'] = st.text_input("Mother's Name", key=f"mother_{idx}", value=member.get("mother", ""))
-                        docs['Place of Birth'] = st.text_input("Place of Birth", key=f"birthplace_{idx}", value=member.get("birthplace", ""))
+                        docs['Email'] = st.text_input("Email", key=f"email_{idx}", value=members[idx].get("email", ""))
+                        docs['Phone'] = st.text_input("Phone Number", key=f"phone_{idx}", value=members[idx].get("phone", ""))
+                        docs['Mother Name'] = st.text_input("Mother's Name", key=f"mother_{idx}", value=members[idx].get("mother", ""))
+                        docs['Place of Birth'] = st.text_input("Place of Birth", key=f"birthplace_{idx}", value=members[idx].get("birthplace", ""))
                         nominee_list = []
                         num_nominees = st.number_input(f"Number of nominees?", min_value=1, max_value=3, value=1, key=f"nominee_count_{idx}")
                         for n in range(int(num_nominees)):
@@ -338,11 +367,14 @@ with st.container():
                 else:
                     all_fields = False
 
-                member['docs'] = docs
-                member['is_complete'] = all_fields
+                members[idx]['docs'] = docs
+                members[idx]['is_complete'] = all_fields
                 if all_fields:
                     completed_forms += 1
                 st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            with tab:
+                st.empty()
 
     # -- Animated Progress Bar & Label --
     st.markdown("---")
@@ -353,7 +385,6 @@ with st.container():
         unsafe_allow_html=True
     )
     st.markdown(f"<span style='color:#b8e9ff;font-size:1.04em;'>{completed_forms} of {len(members)} complete</span>", unsafe_allow_html=True)
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -- Sticky Footer Submission Bar --
