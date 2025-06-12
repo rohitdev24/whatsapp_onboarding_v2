@@ -5,97 +5,111 @@ from datetime import datetime
 
 st.set_page_config(page_title="Onboarding App", layout="centered")
 
-# Styling
-st.markdown("""
-    <style>
-    body {
-        background-color: #121212;
-        color: #E0E0E0;
-    }
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stDateInput > div > div > input,
-    .stTextArea > div > textarea {
-        background-color: #1E1E1E;
-        color: white;
-        border: 1px solid #3C3C3C;
-        border-radius: 8px;
-    }
-    .stButton > button {
-        background-color: #3C3C3C;
-        color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 10px;
-        font-weight: bold;
-    }
-    footer {visibility: hidden;}
-    </style>
-""", unsafe_allow_html=True)
+st.image("https://yourcompanylogo.com/logo.png", width=250)
+st.title("Client Onboarding Form")
+st.markdown("Contact us at **Contactus@sssdistributors.com**")
 
-# App UI
-st.image("https://via.placeholder.com/250x80.png?text=SSS+Distributors+Logo", use_column_width=False)
-st.title("SSS Distributors Pvt Ltd")
-st.subheader("WhatsApp Client Onboarding")
-st.markdown("---")
+# Function to collect documents for an individual
+def upload_docs(name, is_minor):
+    st.subheader(f"Documents for {name}")
+    docs = {}
+    if not is_minor:
+        docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{name}")
+        docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{name}")
+        docs['Cancelled Cheque/Bank Statement'] = st.file_uploader("Cancelled Cheque or Bank Statement", key=f"cheque_{name}")
+        docs['Photo'] = st.file_uploader("Photo", type=["jpg", "jpeg", "png"], key=f"photo_{name}")
+        docs['Email'] = st.text_input("Email", key=f"email_{name}")
+        docs['Phone'] = st.text_input("Phone Number", key=f"phone_{name}")
+        docs['Mother Name'] = st.text_input("Mother's Name", key=f"mother_{name}")
+        docs['Place of Birth'] = st.text_input("Place of Birth", key=f"birthplace_{name}")
 
-st.markdown("**How many family members want to invest (excluding the family head)?**")
-members_count = st.number_input("Enter number of members", min_value=0, step=1)
+        nominee_list = []
+        num_nominees = st.number_input(f"How many nominees for {name}?", min_value=1, max_value=3, value=1, key=f"nominee_count_{name}")
+        for n in range(int(num_nominees)):
+            st.markdown(f"**Nominee {n+1} Details**")
+            nominee = {}
+            nominee['Name'] = st.text_input("Nominee Name", key=f"nominee_name_{name}_{n}")
+            nominee['Relation'] = st.text_input("Relation", key=f"nominee_relation_{name}_{n}")
+            nominee['PAN Card'] = st.file_uploader("Nominee PAN Card", key=f"nominee_pan_{name}_{n}")
+            nominee['Occupation'] = st.text_input("Occupation", key=f"nominee_occ_{name}_{n}")
+            nominee['Income'] = st.text_input("Income", key=f"nominee_income_{name}_{n}")
+            nominee_list.append(nominee)
+        docs['Nominees'] = nominee_list
 
-family_head_name = st.text_input("Name of Family Head")
-family_head_age = st.number_input("Age of Family Head", min_value=0, max_value=120, step=1)
-
-member_details = []
-
-for i in range(int(members_count)):
-    with st.expander(f"Enter details for Family Member {i+1}"):
-        name = st.text_input(f"Name of Member {i+1}", key=f"name_{i}")
-        age = st.number_input(f"Age of {name}", min_value=0, max_value=120, step=1, key=f"age_{i}")
-        member_details.append({"name": name, "age": age})
-
-if st.button("Next"):
-    st.markdown("---")
-    st.markdown("### Document Upload")
-
-    def upload_docs(label):
-        st.markdown(f"**{label}**")
-        aadhaar = st.file_uploader("E-Aadhaar (Masked PDF)", type="pdf", key=f"aadhaar_{label}")
-        pan = st.file_uploader("PAN Card", type=["png", "jpg", "jpeg", "pdf"], key=f"pan_{label}")
-        bank = st.file_uploader("Cancelled Cheque/Bank Statement", type=["png", "jpg", "jpeg", "pdf"], key=f"bank_{label}")
-        photo = st.file_uploader("Photo", type=["png", "jpg", "jpeg"], key=f"photo_{label}")
-        email = st.text_input("Email", key=f"email_{label}")
-        phone = st.text_input("Phone Number", key=f"phone_{label}")
-        mother = st.text_input("Mother's Name", key=f"mother_{label}")
-        nominee = st.text_area("Nominee Details (Name, Relation, PAN, Occupation, Income)", key=f"nominee_{label}")
-        pob = st.text_input("Place of Birth", key=f"pob_{label}")
-
-    def upload_minor_docs(label):
-        st.markdown(f"**{label} (Minor)**")
-        bc = st.file_uploader("Birth Certificate", type="pdf", key=f"bc_{label}")
-        g_name = st.text_input("Guardian Name", key=f"gname_{label}")
-        g_pan = st.file_uploader("Guardian PAN Card", type="pdf", key=f"gpan_{label}")
-        g_aadhaar = st.file_uploader("Guardian Aadhaar", type="pdf", key=f"gaadhaar_{label}")
-        g_bank = st.file_uploader("Guardian Bank Statement/Cancelled Cheque", type="pdf", key=f"gbank_{label}")
-
-    st.subheader(f"Documents for {family_head_name} (Family Head)")
-    if family_head_age >= 18:
-        upload_docs(family_head_name)
     else:
-        upload_minor_docs(family_head_name)
+        docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{name}")
+        guardian_list = []
+        num_guardians = st.number_input(f"How many guardians for {name}?", min_value=1, max_value=2, value=1, key=f"guardian_count_{name}")
+        for g in range(int(num_guardians)):
+            st.markdown(f"**Guardian {g+1} Details**")
+            guardian = {}
+            guardian['Guardian PAN'] = st.file_uploader("Guardian PAN Card", key=f"guardian_pan_{name}_{g}")
+            guardian['Guardian Aadhaar'] = st.file_uploader("Guardian Aadhaar", key=f"guardian_aadhaar_{name}_{g}")
+            guardian['Guardian Bank Statement/Cheque'] = st.file_uploader("Guardian Bank Statement or Cancelled Cheque", key=f"guardian_bank_{name}_{g}")
+            guardian_list.append(guardian)
+        docs['Guardians'] = guardian_list
 
-    for i, member in enumerate(member_details):
-        st.subheader(f"Documents for {member['name']}")
-        if member['age'] >= 18:
-            upload_docs(member['name'])
-        else:
-            upload_minor_docs(member['name'])
+    return docs
 
-    st.markdown("---")
-    st.markdown("### Important Notes")
-    st.markdown("""
-    **E-Mandate Explanation:**  
-    You will receive an email for e-mandate approval. This is an agreement between you and BSE Star MF that ensures money can only go from your account to BSE and can only be invested in your name. The amount shown is just the maximum transaction limit — this mandate will be used for all your SIPs and lump sum investments if internet banking isn't available.
-    """)
+# Main form logic
+with st.form("onboarding_form"):
+    head_name = st.text_input("Family Head Name")
+    head_age = st.number_input("Family Head Age", min_value=0, max_value=120)
+    members_count = st.number_input("How many family members want to invest?", min_value=0, max_value=10)
+    members = []
+    for i in range(int(members_count)):
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input(f"Member {i+1} Name", key=f"name_{i}")
+        with col2:
+            age = st.number_input(f"Member {i+1} Age", min_value=0, max_value=120, key=f"age_{i}")
+        members.append({"name": name, "age": age})
+    submitted = st.form_submit_button("Submit")
 
-    st.markdown("---")
-    st.markdown("Contact us at: [Contactus@sssdistributors.com](mailto:Contactus@sssdistributors.com)")
+if submitted:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_dir = f"temp_{timestamp}"
+    os.makedirs(base_dir, exist_ok=True)
+    all_docs = {}
+    for member in members:
+        name = member['name']
+        age = member['age']
+        folder = os.path.join(base_dir, name.replace(" ", "_"))
+        os.makedirs(folder, exist_ok=True)
+        docs = upload_docs(name, is_minor=(age < 18))
+        all_docs[name] = docs
+
+        for key, file in docs.items():
+            if isinstance(file, list):
+                for idx, subdict in enumerate(file):
+                    for subkey, subfile in subdict.items():
+                        if hasattr(subfile, 'read'):
+                            ext = subfile.name.split('.')[-1]
+                            with open(os.path.join(folder, f"{key}_{idx+1}_{subkey}.{ext}"), "wb") as f:
+                                f.write(subfile.read())
+            elif isinstance(file, dict):
+                for nkey, nfile in file.items():
+                    if hasattr(nfile, 'read'):
+                        ext = nfile.name.split('.')[-1]
+                        with open(os.path.join(folder, f"{nkey}.{ext}"), "wb") as f:
+                            f.write(nfile.read())
+            elif hasattr(file, 'read'):
+                ext = file.name.split('.')[-1]
+                with open(os.path.join(folder, f"{key}.{ext}"), "wb") as f:
+                    f.write(file.read())
+
+    zip_path = f"{head_name.replace(' ', '_')}_onboarding.zip"
+    with zipfile.ZipFile(zip_path, "w") as zipf:
+        for root, _, files in os.walk(base_dir):
+            for file in files:
+                zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), base_dir))
+
+    st.success(f"Documents collected and zipped into {zip_path}")
+
+    st.markdown("### Next Steps")
+    st.markdown("- You'll receive an AOF (Account Opening Form) shortly for confirmation.")
+    st.markdown("- Post confirmation, approve the following emails from BSE StarMF:")
+    st.markdown("1. **E-log**: After verifying AOF details")
+    st.markdown("2. **Nominee Authentication**")
+    st.markdown("3. **E-Mandate**: Authorizes BSE to debit your account directly for future SIPs or lump sum investments.")
+    st.info("The E-mandate sets a max transaction limit, ensuring secure investments through your account only.")
