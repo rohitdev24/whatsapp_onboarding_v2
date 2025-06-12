@@ -6,7 +6,7 @@ import base64
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
-# -- Custom CSS for full theme (no top margin, glassmorphism, gradients, animation) --
+# -- CSS for improved look & cursor fix --
 st.markdown("""
     <style>
         html, body, .stApp {
@@ -14,18 +14,53 @@ st.markdown("""
             color: #f0f0fa;
             padding-top: 0px !important;
             margin-top: 0px !important;
+            user-select: none !important;
+        }
+        .block-container {
+            padding-top: 0rem !important;
+        }
+        .glass-header {
+            padding: 1.6rem 0 1.1rem 0;
+            margin: 0 auto 2rem auto;
+            max-width: 820px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        .glass-header-logo {
+            width: 64px;
+            margin-right: 1.2rem;
+            filter: drop-shadow(0 2px 16px #3a2b7c88);
+            border-radius: 18px;
+        }
+        .glass-header-title {
+            font-size: 2.35rem;
+            font-weight: 900;
+            background: linear-gradient(90deg,#b8e9ff 10%,#d6bfff 90%);
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: .01em;
+        }
+        .glass-header-contact {
+            color: #aeefff;
+            font-size: 1.12rem;
+            margin-left: 5.1rem;
+            margin-top: 0.1em;
         }
         .glass-card {
-            background: rgba(34, 34, 51, 0.69);
+            background: rgba(34, 34, 51, 0.92);
             border-radius: 20px;
-            box-shadow: 0 8px 40px #8775e040, 0 1.5px 12px #00000033;
-            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 40px #8775e0cc, 0 1.5px 12px #00000033;
+            backdrop-filter: blur(14px);
             padding: 2.2rem 2rem 1.5rem 2rem;
             margin-bottom: 2rem;
-            border: 1.5px solid #5233e440;
+            border: 1.5px solid #5233e4cc;
+            max-width: 820px;
+            margin-left: auto;
+            margin-right: auto;
         }
         .glass-sidebar {
-            background: rgba(47, 47, 72, 0.88);
+            background: rgba(47, 47, 72, 0.93);
             border-radius: 18px;
             box-shadow: 0 2px 24px #5233e420;
             backdrop-filter: blur(8px);
@@ -121,10 +156,6 @@ st.markdown("""
             color: #130b2a !important;
             font-weight: 700;
         }
-        /* Remove possible empty widget at top */
-        .block-container > div:first-child:empty {
-            display: none !important;
-        }
         .tooltip-wrap {
             display: inline-block;
             position: relative;
@@ -160,12 +191,27 @@ st.markdown("""
             opacity: 1;
         }
         @media (max-width: 600px) {
+            .glass-header, .glass-card { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
+            .glass-header-title { font-size: 1.45rem; }
             .tooltip-box { width: 90vw; left: 5vw; margin-left: 0; }
         }
     </style>
 """, unsafe_allow_html=True)
 
-# -- Sidebar --
+# -- No empty widget above main content; all widgets below top header --
+
+# -- Sticky Glass Header (not a Streamlit widget, just HTML) --
+st.markdown("""
+<div class="glass-header" style="user-select:none;">
+    <img src="https://raw.githubusercontent.com/rohitdev24/whatsapp_onboarding_v2/main/logo.png" class="glass-header-logo">
+    <div>
+        <span class="glass-header-title">✨ Onboarding Portal</span><br>
+        <span class="glass-header-contact">Contact: <b>Contactus@sssdistributors.com</b></span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# -- SideBar --
 with st.sidebar:
     st.markdown("<div class='glass-sidebar'>", unsafe_allow_html=True)
     st.image(
@@ -193,9 +239,6 @@ with st.sidebar:
 # -- Main Card Layout --
 with st.container():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<h1 style='font-weight:900; letter-spacing:.02em; background:linear-gradient(90deg,#b8e9ff 10%,#d6bfff 90%);"
-                "-webkit-background-clip:text; color:transparent;display:inline;'>✨ Onboarding Portal</h1>", unsafe_allow_html=True)
-    st.markdown("<div style='color:#aeefff;font-size:1.12rem;margin-top:0.6em;'>Contact: <b>Contactus@sssdistributors.com</b></div>", unsafe_allow_html=True)
     st.markdown("---")
     # -- Family Head Details --
     with st.form("family_form", clear_on_submit=False):
@@ -264,6 +307,7 @@ with st.container():
                         all_fields &= bool(docs['Birth Certificate']) and num_guardians >= 1
                         for guard in guardian_list:
                             all_fields &= all(guard.get(x) for x in guard)
+                        # passport_photo and minor pan are both optional for minors
                     else:
                         docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{idx}")
                         docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}")
