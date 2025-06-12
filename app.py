@@ -1,57 +1,101 @@
-
 import streamlit as st
 import os
 import zipfile
-from PIL import Image
 from datetime import datetime
-from io import BytesIO
 
-st.set_page_config(page_title="Onboarding App", page_icon="📄")
-st.image("logo.png", width=200)
-st.markdown("### Welcome to SSS Distributors Onboarding")
-st.markdown("📧 Contact us at [Contactus@sssdistributors.com](mailto:Contactus@sssdistributors.com)")
-st.write("---")
+st.set_page_config(page_title="Onboarding App", layout="centered")
 
-num_members = st.number_input("How many immediate family members want to invest?", min_value=1, step=1)
-family_head = st.text_input("Name of Family Head")
-family_zip = f"{family_head.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.zip"
+# Styling
+st.markdown("""
+    <style>
+    body {
+        background-color: #121212;
+        color: #E0E0E0;
+    }
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stDateInput > div > div > input,
+    .stTextArea > div > textarea {
+        background-color: #1E1E1E;
+        color: white;
+        border: 1px solid #3C3C3C;
+        border-radius: 8px;
+    }
+    .stButton > button {
+        background-color: #3C3C3C;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 10px;
+        font-weight: bold;
+    }
+    footer {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
 
-members = []
+# App UI
+st.image("https://via.placeholder.com/250x80.png?text=SSS+Distributors+Logo", use_column_width=False)
+st.title("SSS Distributors Pvt Ltd")
+st.subheader("WhatsApp Client Onboarding")
+st.markdown("---")
 
-for i in range(num_members):
-    st.subheader(f"Member {i+1} Details")
-    name = st.text_input(f"Name of Member {i+1}", key=f"name_{i}")
-    age = st.number_input(f"Age of {name or f'Member {i+1}'}", min_value=0, key=f"age_{i}")
-    folder_name = name.replace(" ", "_") if name else f"Member_{i+1}"
+st.markdown("**How many family members want to invest (excluding the family head)?**")
+members_count = st.number_input("Enter number of members", min_value=0, step=1)
 
-    files = []
-    if age >= 18:
-        files.append(st.file_uploader("E-Aadhaar (Masked PDF)", key=f"aadhaar_{i}"))
-        files.append(st.file_uploader("PAN Card", key=f"pan_{i}"))
-        files.append(st.file_uploader("Cancelled Cheque / Bank Statement", key=f"cheque_{i}"))
-        files.append(st.file_uploader("Photo", type=["jpg", "jpeg", "png"], key=f"photo_{i}"))
-        st.text_input("Email", key=f"email_{i}")
-        st.text_input("Phone No.", key=f"phone_{i}")
-        st.text_input("Mother's Name", key=f"mother_{i}")
-        st.text_input("Place of Birth", key=f"birthplace_{i}")
-        st.text_input("Nominee Name", key=f"nominee_name_{i}")
-        st.text_input("Nominee Relation", key=f"nominee_rel_{i}")
-        st.text_input("Nominee PAN", key=f"nominee_pan_{i}")
-        st.text_input("Nominee Occupation", key=f"nominee_occ_{i}")
+family_head_name = st.text_input("Name of Family Head")
+family_head_age = st.number_input("Age of Family Head", min_value=0, max_value=120, step=1)
+
+member_details = []
+
+for i in range(int(members_count)):
+    with st.expander(f"Enter details for Family Member {i+1}"):
+        name = st.text_input(f"Name of Member {i+1}", key=f"name_{i}")
+        age = st.number_input(f"Age of {name}", min_value=0, max_value=120, step=1, key=f"age_{i}")
+        member_details.append({"name": name, "age": age})
+
+if st.button("Next"):
+    st.markdown("---")
+    st.markdown("### Document Upload")
+
+    def upload_docs(label):
+        st.markdown(f"**{label}**")
+        aadhaar = st.file_uploader("E-Aadhaar (Masked PDF)", type="pdf", key=f"aadhaar_{label}")
+        pan = st.file_uploader("PAN Card", type=["png", "jpg", "jpeg", "pdf"], key=f"pan_{label}")
+        bank = st.file_uploader("Cancelled Cheque/Bank Statement", type=["png", "jpg", "jpeg", "pdf"], key=f"bank_{label}")
+        photo = st.file_uploader("Photo", type=["png", "jpg", "jpeg"], key=f"photo_{label}")
+        email = st.text_input("Email", key=f"email_{label}")
+        phone = st.text_input("Phone Number", key=f"phone_{label}")
+        mother = st.text_input("Mother's Name", key=f"mother_{label}")
+        nominee = st.text_area("Nominee Details (Name, Relation, PAN, Occupation, Income)", key=f"nominee_{label}")
+        pob = st.text_input("Place of Birth", key=f"pob_{label}")
+
+    def upload_minor_docs(label):
+        st.markdown(f"**{label} (Minor)**")
+        bc = st.file_uploader("Birth Certificate", type="pdf", key=f"bc_{label}")
+        g_name = st.text_input("Guardian Name", key=f"gname_{label}")
+        g_pan = st.file_uploader("Guardian PAN Card", type="pdf", key=f"gpan_{label}")
+        g_aadhaar = st.file_uploader("Guardian Aadhaar", type="pdf", key=f"gaadhaar_{label}")
+        g_bank = st.file_uploader("Guardian Bank Statement/Cancelled Cheque", type="pdf", key=f"gbank_{label}")
+
+    st.subheader(f"Documents for {family_head_name} (Family Head)")
+    if family_head_age >= 18:
+        upload_docs(family_head_name)
     else:
-        files.append(st.file_uploader("Birth Certificate", key=f"birth_{i}"))
-        files.append(st.file_uploader("Guardian's PAN", key=f"g_pan_{i}"))
-        files.append(st.file_uploader("Guardian's Aadhaar", key=f"g_adhar_{i}"))
-        files.append(st.file_uploader("Guardian's Bank Statement / Cheque", key=f"g_cheque_{i}"))
+        upload_minor_docs(family_head_name)
 
-    members.append((folder_name, files))
+    for i, member in enumerate(member_details):
+        st.subheader(f"Documents for {member['name']}")
+        if member['age'] >= 18:
+            upload_docs(member['name'])
+        else:
+            upload_minor_docs(member['name'])
 
-if st.button("Create ZIP"):
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        for folder, files in members:
-            for file in files:
-                if file is not None:
-                    zipf.writestr(f"{folder}/{file.name}", file.read())
-    st.success("ZIP file created!")
-    st.download_button(label="Download ZIP", data=zip_buffer.getvalue(), file_name=family_zip, mime="application/zip")
+    st.markdown("---")
+    st.markdown("### Important Notes")
+    st.markdown("""
+    **E-Mandate Explanation:**  
+    You will receive an email for e-mandate approval. This is an agreement between you and BSE Star MF that ensures money can only go from your account to BSE and can only be invested in your name. The amount shown is just the maximum transaction limit — this mandate will be used for all your SIPs and lump sum investments if internet banking isn't available.
+    """)
+
+    st.markdown("---")
+    st.markdown("Contact us at: [Contactus@sssdistributors.com](mailto:Contactus@sssdistributors.com)")
