@@ -4,8 +4,13 @@ import zipfile
 from datetime import datetime
 import base64
 import shutil
+import re
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
+
+def safe_name(name):
+    # Replace spaces and any character that's not a-z, A-Z, 0-9, or _ with _
+    return re.sub(r'[^A-Za-z0-9_]', '_', name.replace(' ', '_'))
 
 # ---- CSS for modern UI and horizontal radio tabs ----
 st.markdown("""
@@ -203,7 +208,7 @@ if members:
                 os.makedirs(base_dir, exist_ok=True)
                 for idx2, member in enumerate(members):
                     name = member['name']
-                    folder = os.path.join(base_dir, name.replace(" ", "_"))
+                    folder = os.path.join(base_dir, safe_name(name))
                     os.makedirs(folder, exist_ok=True)
                     # Save passport photo if any
                     if member.get("avatar"):
@@ -217,12 +222,12 @@ if members:
                                 for subkey, subfile in subdict.items():
                                     if hasattr(subfile, 'getvalue'):
                                         ext = subfile.name.split('.')[-1]
-                                        fname = f"{key}_{idx3+1}_{subkey.replace(' ', '_')}.{ext}"
+                                        fname = f"{safe_name(key)}_{idx3+1}_{safe_name(subkey)}.{ext}"
                                         with open(os.path.join(folder, fname), "wb") as f:
                                             f.write(subfile.getvalue())
                         elif hasattr(file, 'getvalue') and key not in ['Passport Size Photo', 'Minor PAN Card (optional)']:
                             ext = file.name.split('.')[-1]
-                            fname = f"{key.replace(' ', '_')}.{ext}"
+                            fname = f"{safe_name(key)}.{ext}"
                             with open(os.path.join(folder, fname), "wb") as f:
                                 f.write(file.getvalue())
                         elif key == 'Minor PAN Card (optional)' and hasattr(file, 'getvalue'):
@@ -230,7 +235,7 @@ if members:
                             fname = f"minor_pan_card.{ext}"
                             with open(os.path.join(folder, fname), "wb") as f:
                                 f.write(file.getvalue())
-                zip_path = f"{head_name.replace(' ', '_')}_onboarding.zip"
+                zip_path = f"{safe_name(head_name)}_onboarding.zip"
                 with zipfile.ZipFile(zip_path, "w") as zipf:
                     for root, _, files in os.walk(base_dir):
                         for file in files:
@@ -238,9 +243,8 @@ if members:
                 st.success(f"Documents collected and zipped into {zip_path}")
                 with open(zip_path, 'rb') as f:
                     st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_path, mime='application/zip')
-                # Optionally clean up temp files/folders after download button
                 shutil.rmtree(base_dir, ignore_errors=True)
-                #os.remove(zip_path)  # Uncomment if you want to remove zip after download (user may download again if commented)
+                # os.remove(zip_path)  # Uncomment if you want to remove zip after download (user may download again if commented)
             st.markdown("""
                 ### Next Steps
                 - You'll receive an AOF (Account Opening Form) shortly for confirmation.
