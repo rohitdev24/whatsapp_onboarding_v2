@@ -210,6 +210,43 @@ if members:
                     name = member['name']
                     folder = os.path.join(base_dir, safe_name(name))
                     os.makedirs(folder, exist_ok=True)
+                    # --- Write the details.txt file with all info ---
+                    details_lines = [
+                        f"Name: {name}",
+                        f"Age: {member.get('age', '')}",
+                    ]
+                    docs = member.get('docs', {})
+                    if member.get('age', 0) < 18:
+                        details_lines.append("Type: Minor")
+                        details_lines.append(f"Number of Guardians: {len(docs.get('Guardians', []))}")
+                        for idx_g, guardian in enumerate(docs.get('Guardians', [])):
+                            details_lines.append(f"  Guardian {idx_g+1}:")
+                            for gkey, gfile in guardian.items():
+                                details_lines.append(f"    {gkey}: {'Uploaded' if gfile else 'Not uploaded'}")
+                        details_lines.append(f"Birth Certificate: {'Uploaded' if docs.get('Birth Certificate') else 'Not uploaded'}")
+                        details_lines.append(f"Minor PAN Card: {'Uploaded' if docs.get('Minor PAN Card (optional)') else 'Not uploaded'}")
+                    else:
+                        details_lines.append("Type: Adult")
+                        details_lines.append(f"E-Aadhaar: {'Uploaded' if docs.get('E-Aadhaar') else 'Not uploaded'}")
+                        details_lines.append(f"PAN Card: {'Uploaded' if docs.get('PAN Card') else 'Not uploaded'}")
+                        details_lines.append(f"Cancelled Cheque/Bank Statement: {'Uploaded' if docs.get('Cancelled Cheque/Bank Statement') else 'Not uploaded'}")
+                        details_lines.append(f"Passport Size Photo: {'Uploaded' if docs.get('Passport Size Photo') else 'Not uploaded'}")
+                        details_lines.append(f"Email: {docs.get('Email', '')}")
+                        details_lines.append(f"Phone: {docs.get('Phone', '')}")
+                        details_lines.append(f"Mother Name: {docs.get('Mother Name', '')}")
+                        details_lines.append(f"Place of Birth: {docs.get('Place of Birth', '')}")
+                        nominee_list = docs.get('Nominees', [])
+                        details_lines.append(f"Number of Nominees: {len(nominee_list)}")
+                        for idx_n, nominee in enumerate(nominee_list):
+                            details_lines.append(f"  Nominee {idx_n+1}:")
+                            for nkey, nval in nominee.items():
+                                if hasattr(nval, 'name'):
+                                    details_lines.append(f"    {nkey}: Uploaded")
+                                else:
+                                    details_lines.append(f"    {nkey}: {nval}")
+                    # Write details.txt for the member
+                    with open(os.path.join(folder, "details.txt"), "w", encoding="utf-8") as f:
+                        f.write('\n'.join(details_lines))
                     # Save passport photo if any
                     if member.get("avatar"):
                         ext = member['avatar'].name.split('.')[-1]
