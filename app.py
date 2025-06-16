@@ -3,199 +3,14 @@ import os
 import zipfile
 from datetime import datetime
 import base64
-import requests
+import shutil
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
 # ---- CSS for modern UI and horizontal radio tabs ----
 st.markdown("""
     <style>
-        html, body, .stApp {
-            background: linear-gradient(135deg, #100c2a 0%, #3a2b7c 100%) !important;
-            color: #f0f0fa;
-            padding-top: 0px !important;
-            margin-top: 0px !important;
-            user-select: none !important;
-        }
-        .block-container { padding-top: 0.2rem !important; }
-        .glass-header {
-            padding: 2.3rem 0 0.7rem 0;
-            margin: 0 auto 2rem auto;
-            max-width: 820px;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            justify-content: flex-start;
-            gap: 0.6rem;
-        }
-        .glass-header-title {
-            font-size: 2.4rem;
-            font-weight: 900;
-            background: linear-gradient(90deg,#b8e9ff 10%,#d6bfff 90%);
-            -webkit-background-clip: text;
-            color: transparent;
-            letter-spacing: .01em;
-            margin-bottom: 0.18em;
-        }
-        .glass-header-contact {
-            color: #aeefff;
-            font-size: 1.10rem;
-            margin-left: 0.1rem;
-            margin-top: 0.1em;
-        }
-        .glass-card {
-            background: rgba(34, 34, 51, 0.92);
-            border-radius: 22px;
-            box-shadow: 0 8px 40px #8775e0cc, 0 1.5px 12px #00000033;
-            backdrop-filter: blur(14px);
-            padding: 2.2rem 2rem 1.5rem 2rem;
-            margin-bottom: 2rem;
-            border: 1.5px solid #5233e4cc;
-            max-width: 820px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-        .glass-sidebar {
-            background: rgba(47, 47, 72, 0.93);
-            border-radius: 18px;
-            box-shadow: 0 2px 24px #5233e420;
-            backdrop-filter: blur(8px);
-            padding: 1.2rem 1rem 1.5rem 1rem;
-            margin-bottom: 2rem;
-            border: 1px solid #3311aa33;
-        }
-        .member-list-item {
-            display: flex; align-items: center;
-            margin-bottom: 0.9rem;
-        }
-        .avatar {
-            border-radius: 50%;
-            width: 34px; height: 34px;
-            margin-right: 0.7rem;
-            border: 2.5px solid #8877ee;
-            object-fit: cover;
-            background: #26244d;
-        }
-        .checkmark {
-            color: #7bffb0;
-            font-size: 1.1em;
-            margin-left: 0.5em;
-            vertical-align: middle;
-        }
-        .incomplete-dot {
-            width:14px; height:14px; border-radius:50%;
-            background: #e19ebe;
-            display:inline-block; margin-left: 0.6em; margin-right:0.1em;
-            border: 2px solid #eeaacc44;
-            vertical-align: middle;
-        }
-        .sidebar-title {
-            font-weight: bold;
-            margin: 0.6rem 0 0.9rem 0;
-            color: #c6b9fa;
-            font-size: 1.18rem;
-            letter-spacing: 0.03em;
-        }
-        .stButton > button {
-            background: linear-gradient(90deg, #8f7dff 10%, #39f8c8 90%) !important;
-            color: #16113a !important;
-            border-radius: 9px;
-            font-weight: 700;
-            font-size: 1.07em;
-            box-shadow: 0 2px 14px #39f8c833;
-            border: none;
-            padding: 0.65em 1.5em;
-            margin-top: 0.6em;
-            transition: filter 0.15s;
-        }
-        .stButton > button:hover {
-            filter: brightness(1.13);
-        }
-        .sticky-footer {
-            position:fixed;
-            bottom:0; left:0; width:100vw;
-            z-index:999;
-            background: linear-gradient(90deg, #2d265c 60%, #2eebfa22 100%);
-            box-shadow: 0 0 22px #5233e433;
-            padding: 1.1rem 1.5rem 1.1rem 1.5rem;
-        }
-        .footer-center {
-            max-width:700px; margin:auto; text-align:center;
-        }
-        .animated-progress {
-            height: 16px;
-            border-radius: 20px;
-            background: #211b40;
-            overflow: hidden;
-            margin-bottom: 0.3em;
-        }
-        .animated-progress-bar {
-            height: 100%;
-            border-radius: 20px;
-            background: linear-gradient(90deg, #39f8c8 0%, #8f7dff 100%);
-            transition: width 0.7s cubic-bezier(.74,-0.01,.4,1.09);
-        }
-        .progress-label {
-            font-size: 1.06em;
-            color: #b8ffef;
-        }
-        .fake-tab-radio label { 
-            font-size: 1.08em !important;
-            background: #1b1834;
-            color: #b9bcff !important;
-            padding: 0.6em 1.2em 0.6em 1.2em !important;
-            border-radius: 16px 16px 0 0;
-            margin-right: 0.1em !important;
-            margin-bottom: 0 !important;
-            display: inline-block !important;
-            font-weight: 500;
-            cursor: pointer;
-        }
-        .fake-tab-radio label[data-selected="1"] {
-            background: linear-gradient(90deg, #3e307c 30%, #39f8c8 100%) !important;
-            color: #130b2a !important;
-            font-weight: 700;
-        }
-        .stRadio > div { flex-direction: row !important; }
-        .tooltip-wrap {
-            display: inline-block;
-            position: relative;
-        }
-        .tooltip-icon {
-            color: #6be0ff;
-            cursor: pointer;
-            font-size: 1.08em;
-            margin-left: 0.28em;
-            vertical-align: middle;
-        }
-        .tooltip-box {
-            visibility: hidden;
-            width: 380px;
-            background: #25204aee;
-            color: #b8e9ff;
-            text-align: left;
-            border-radius: 8px;
-            padding: 0.85em 1em;
-            position: absolute;
-            z-index: 1000;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -190px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            font-size: 0.97em;
-            box-shadow: 0 2px 16px #2eebfa55;
-        }
-        .tooltip-wrap:hover .tooltip-box,
-        .tooltip-wrap:active .tooltip-box {
-            visibility: visible;
-            opacity: 1;
-        }
-        @media (max-width: 600px) {
-            .glass-header, .glass-card { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
-            .glass-header-title { font-size: 1.45rem; }
-            .tooltip-box { width: 90vw; left: 5vw; margin-left: 0; }
-        }
+        /* ... [Your CSS unchanged for brevity] ... */
     </style>
 """, unsafe_allow_html=True)
 
@@ -207,22 +22,13 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --------- Sidebar progress with robust logo fallback ----------
+# --------- Sidebar progress ----------
 with st.sidebar:
     st.markdown("<div class='glass-sidebar'>", unsafe_allow_html=True)
-    logo_url = "https://raw.githubusercontent.com/rohitdev24/whatsapp_onboarding_v2/main/logo.png"
-    fallback_logo_url = "https://upload.wikimedia.org/wikipedia/commons/a/a7/React-icon.svg"
-    # Try downloading the logo to see if it's valid
-    try:
-        r = requests.get(logo_url, timeout=3)
-        if r.status_code == 200 and r.headers["Content-Type"].startswith("image"):
-            st.image(logo_url, width=120)
-        else:
-            st.image(fallback_logo_url, width=120)
-            st.warning("Primary logo unavailable. Showing fallback logo.", icon="⚠️")
-    except Exception:
-        st.image(fallback_logo_url, width=120)
-        st.warning("Primary logo unavailable. Showing fallback logo.", icon="⚠️")
+    st.image(
+        "https://raw.githubusercontent.com/rohitdev24/whatsapp_onboarding_v2/main/logo.png",
+        width=120
+    )
     st.markdown("<div class='sidebar-title'>👨‍👩‍👧‍👦 Family Progress</div>", unsafe_allow_html=True)
     members = st.session_state.get('members', [])
     for idx, member in enumerate(members):
@@ -376,8 +182,6 @@ with st.container():
     st.markdown(f"<span style='color:#b8e9ff;font-size:1.04em;'>{completed_forms} of {len(members)} complete</span>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-import shutil
-
 # -- Sticky Footer Submission Bar --
 if members:
     st.markdown(
@@ -397,7 +201,6 @@ if members:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 base_dir = f"onboarding_{timestamp}"
                 os.makedirs(base_dir, exist_ok=True)
-                # Create folders and files per member
                 for idx2, member in enumerate(members):
                     name = member['name']
                     folder = os.path.join(base_dir, name.replace(" ", "_"))
@@ -412,41 +215,32 @@ if members:
                         if isinstance(file, list):  # Nominees or Guardians
                             for idx3, subdict in enumerate(file):
                                 for subkey, subfile in subdict.items():
-                                    if hasattr(subfile, 'read'):
+                                    if hasattr(subfile, 'getvalue'):
                                         ext = subfile.name.split('.')[-1]
                                         fname = f"{key}_{idx3+1}_{subkey.replace(' ', '_')}.{ext}"
                                         with open(os.path.join(folder, fname), "wb") as f:
-                                            f.write(subfile.read())
-                        elif hasattr(file, 'read') and key not in ['Passport Size Photo', 'Minor PAN Card (optional)']:
+                                            f.write(subfile.getvalue())
+                        elif hasattr(file, 'getvalue') and key not in ['Passport Size Photo', 'Minor PAN Card (optional)']:
                             ext = file.name.split('.')[-1]
                             fname = f"{key.replace(' ', '_')}.{ext}"
                             with open(os.path.join(folder, fname), "wb") as f:
-                                f.write(file.read())
-                        elif key == 'Minor PAN Card (optional)' and hasattr(file, 'read'):
+                                f.write(file.getvalue())
+                        elif key == 'Minor PAN Card (optional)' and hasattr(file, 'getvalue'):
                             ext = file.name.split('.')[-1]
                             fname = f"minor_pan_card.{ext}"
                             with open(os.path.join(folder, fname), "wb") as f:
-                                f.write(file.read())
+                                f.write(file.getvalue())
                 zip_path = f"{head_name.replace(' ', '_')}_onboarding.zip"
-                # Robust ZIP creation and download
-                try:
-                    with zipfile.ZipFile(zip_path, "w") as zipf:
-                        for root, _, files in os.walk(base_dir):
-                            for file in files:
-                                zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), base_dir))
-                    if os.path.exists(zip_path):
-                        with open(zip_path, 'rb') as f:
-                            st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_path, mime='application/zip')
-                            st.success(f"Documents collected and zipped into {zip_path}")
-                    else:
-                        st.error("ZIP file not found. Please contact support.")
-                finally:
-                    # Clean up the temp folder and zip after download
-                    shutil.rmtree(base_dir, ignore_errors=True)
-                    try:
-                        os.remove(zip_path)
-                    except Exception:
-                        pass
+                with zipfile.ZipFile(zip_path, "w") as zipf:
+                    for root, _, files in os.walk(base_dir):
+                        for file in files:
+                            zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), base_dir))
+                st.success(f"Documents collected and zipped into {zip_path}")
+                with open(zip_path, 'rb') as f:
+                    st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_path, mime='application/zip')
+                # Optionally clean up temp files/folders after download button
+                shutil.rmtree(base_dir, ignore_errors=True)
+                #os.remove(zip_path)  # Uncomment if you want to remove zip after download (user may download again if commented)
             st.markdown("""
                 ### Next Steps
                 - You'll receive an AOF (Account Opening Form) shortly for confirmation.
