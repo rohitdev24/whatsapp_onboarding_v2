@@ -68,13 +68,8 @@ def send_email_graph_api(to, subject, body, attachment_bytes=None, attachment_fi
     return True
 
 def create_onedrive_folder_if_not_exists(access_token, folder_path_list):
-    """
-    Ensure that a folder structure exists in OneDrive.
-    folder_path_list: e.g. ["Client Data", "FamilyHead"]
-    Returns the OneDrive folder id for the last folder in the path.
-    """
     parent_id = None
-    for idx, folder in enumerate(folder_path_list):
+    for folder in folder_path_list:
         if parent_id:
             url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/items/{parent_id}/children"
         else:
@@ -88,7 +83,6 @@ def create_onedrive_folder_if_not_exists(access_token, folder_path_list):
         if folder_item:
             parent_id = folder_item['id']
         else:
-            # create the folder in current parent
             create_url = url
             create_resp = requests.post(
                 create_url,
@@ -102,7 +96,6 @@ def create_onedrive_folder_if_not_exists(access_token, folder_path_list):
     return parent_id
 
 def upload_to_onedrive(file_bytes, folder_path_list, filename):
-    # Authenticate using client credentials flow
     authority = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}"
     app = msal.ConfidentialClientApplication(
         ONEDRIVE_CLIENT_ID,
@@ -116,13 +109,11 @@ def upload_to_onedrive(file_bytes, folder_path_list, filename):
         return None
     access_token = token_result["access_token"]
 
-    # Ensure folder structure exists and get the parent folder id
     parent_id = create_onedrive_folder_if_not_exists(access_token, folder_path_list)
     if not parent_id:
         st.error("Could not create/find OneDrive folders.")
         return None
 
-    # Upload file to that folder
     upload_url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/items/{parent_id}:/"+filename+":/content"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -134,7 +125,6 @@ def upload_to_onedrive(file_bytes, folder_path_list, filename):
         return None
     return resp.json().get("webUrl", None)
 
-# ---- CSS for modern UI and horizontal radio tabs ----
 st.markdown("""
     <style>
         /* ... [Your CSS unchanged for brevity] ... */
@@ -199,7 +189,6 @@ with st.container():
             st.session_state["family_head_age"] = head_age
             st.session_state["members_count"] = members_count
 
-    # Only reset session state on first load or when family info is updated
     if "members" not in st.session_state or family_submitted:
         st.session_state["members"] = [
             {"name": "", "age": 0, "avatar": None, "avatar_data": None, "is_complete": False, "is_locked": False}
@@ -257,12 +246,14 @@ with st.container():
                 f"<img src='data:image/png;base64,{avatar_data}' class='avatar' style='width:64px;height:64px;margin-top:0.5em;'>",
                 unsafe_allow_html=True
             )
-    if not members[idx].get("is_locked", False):  # Only update if not locked
+    if not members[idx].get("is_locked", False):
         members[idx]['name'], members[idx]['age'] = name, age
         members[idx]['avatar'], members[idx]['avatar_data'] = passport_photo, avatar_data
 
     docs = {}
+    # -- Improved completeness checking logic --
     all_fields = True
+    required_uploads = []
     if name and age >= 0:
         if age < 18:
             docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{idx}", disabled=members[idx].get("is_locked", False))
@@ -277,9 +268,11 @@ with st.container():
                     guardian['Guardian Bank Statement/Cheque'] = st.file_uploader("Guardian Bank Statement or Cancelled Cheque", key=f"guardian_bank_{idx}_{g}", disabled=members[idx].get("is_locked", False))
                     guardian_list.append(guardian)
             docs['Guardians'] = guardian_list
-            all_fields &= bool(docs['Birth Certificate']) and num_guardians >= 1
+            # Check only mandatory fields
+            all_fields = bool(docs['Birth Certificate']) and num_guardians >= 1
             for guard in guardian_list:
-                all_fields &= all(guard.get(x) for x in guard)
+                # Only 'Guardian PAN' and 'Guardian Aadhaar' are strictly required, 'Guardian Bank Statement/Cheque' optional?
+                all_fields = all_fields and bool(guard.get("Guardian PAN")) and bool(guard.get("Guardian Aadhaar"))
         else:
             docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{idx}", disabled=members[idx].get("is_locked", False))
             docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}", disabled=members[idx].get("is_locked", False))
@@ -301,12 +294,16 @@ with st.container():
                     nominee['Income'] = st.text_input("Income", key=f"nominee_income_{idx}_{n}", disabled=members[idx].get("is_locked", False))
                     nominee_list.append(nominee)
             docs['Nominees'] = nominee_list
-            all_fields &= all([
-                docs['E-Aadhaar'], docs['PAN Card'], docs['Cancelled Cheque/Bank Statement'],
-                docs['Email'], docs['Phone'], docs['Mother Name'], docs['Place of Birth'], passport_photo
-            ])
+            # Only require the main fields, not optional ones (and not file uploaders that are not present).
+            required_fields = [
+                docs.get('E-Aadhaar'), docs.get('PAN Card'), docs.get('Cancelled Cheque/Bank Statement'),
+                docs.get('Email'), docs.get('Phone'), docs.get('Mother Name'), docs.get('Place of Birth'),
+                passport_photo
+            ]
+            all_fields = all(required_fields)
             for nm in nominee_list:
-                all_fields &= all(nm.get(x) for x in nm)
+                # Only require Nominee Name and Relation, not all fields
+                all_fields = all_fields and bool(nm.get("Name")) and bool(nm.get("Relation"))
     else:
         all_fields = False
 
@@ -320,13 +317,14 @@ with st.container():
             if all_fields:
                 members[idx]['is_locked'] = True
                 members[idx]['is_complete'] = True
+                members[idx]['docs'] = docs
                 if idx + 1 < len(members):
                     st.session_state.active_tab = idx + 1
                     st.experimental_rerun()
                 else:
                     st.success("All members' data submitted. Now submit all documents for onboarding.")
             else:
-                st.error("Please fill all required fields and upload all documents before submitting.")
+                st.warning("Please fill all required fields and upload all required documents before submitting.")
 
     completed_forms = sum(1 for m in members if m.get("is_complete", False))
     st.markdown("</div>", unsafe_allow_html=True)
