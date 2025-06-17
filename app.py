@@ -5,12 +5,58 @@ from datetime import datetime
 import base64
 import shutil
 import re
+import smtplib
+import ssl
+from email.message import EmailMessage
+import requests
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
 def safe_name(name):
     # Replace spaces and any character that's not a-z, A-Z, 0-9, or _ with _
     return re.sub(r'[^A-Za-z0-9_]', '_', name.replace(' ', '_'))
+
+# ---- Email + OneDrive Secrets ----
+EMAIL_ADDRESS = "contactus@sssdistributors.com"
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
+ONEDRIVE_CLIENT_ID = st.secrets["ONEDRIVE_CLIENT_ID"]
+ONEDRIVE_CLIENT_SECRET = st.secrets["ONEDRIVE_CLIENT_SECRET"]
+ONEDRIVE_TENANT_ID = st.secrets["ONEDRIVE_TENANT_ID"]
+
+def send_email(to, subject, body, attachment=None, filename=None):
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = to
+    msg.set_content(body)
+    if attachment and filename:
+        msg.add_attachment(attachment, maintype="application", subtype="zip", filename=filename)
+    context = ssl.create_default_context()
+    with smtplib.SMTP("smtp.office365.com", 587) as smtp:
+        smtp.starttls(context=context)
+        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        smtp.send_message(msg)
+
+def upload_to_onedrive(file_bytes, filename):
+    token_url = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}/oauth2/v2.0/token"
+    payload = {
+        "client_id": ONEDRIVE_CLIENT_ID,
+        "scope": "https://graph.microsoft.com/.default",
+        "client_secret": ONEDRIVE_CLIENT_SECRET,
+        "grant_type": "client_credentials"
+    }
+    r = requests.post(token_url, data=payload)
+    if r.status_code != 200:
+        st.error("Failed to authenticate with Microsoft Graph for OneDrive upload.")
+        return None
+    access_token = r.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/octet-stream"}
+    upload_url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{filename}:/content"
+    upload_resp = requests.put(upload_url, headers=headers, data=file_bytes)
+    if upload_resp.status_code not in [200,201]:
+        st.error("Failed to upload file to OneDrive.")
+        return None
+    return upload_resp.json().get("webUrl", None)
 
 # ---- CSS for modern UI and horizontal radio tabs ----
 st.markdown("""
@@ -280,6 +326,43 @@ if members:
                 st.success(f"Documents collected and zipped into {zip_path}")
                 with open(zip_path, 'rb') as f:
                     st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_path, mime='application/zip')
+                    file_bytes = f.read()
+
+                # --- Upload to OneDrive ---
+                st.info("Uploading to OneDrive...")
+                onedrive_link = upload_to_onedrive(file_bytes, zip_path)
+                if onedrive_link:
+                    st.success("Documents uploaded to OneDrive.")
+                else:
+                    st.error("Failed to upload to OneDrive.")
+
+                # --- Send Confirmation Email to Applicant (first adult's email) ---
+                applicant_email = None
+                for m in members:
+                    if m.get('age', 0) >= 18:
+                        applicant_email = m.get('docs', {}).get('Email', None)
+                        break
+                # Fallback if only minors: admin email only
+                subject = "✨ SSS Distributors Onboarding Submission Received"
+                admin_body = (
+                    f"New onboarding submission from {head_name}.\n"
+                    f"Submission time: {timestamp}\n"
+                    f"Family members: {', '.join([m['name'] for m in members])}\n"
+                    f"Download all documents from OneDrive: {onedrive_link}\n"
+                )
+                try:
+                    send_email(EMAIL_ADDRESS, subject, admin_body, attachment=file_bytes, filename=zip_path)
+                    if applicant_email:
+                        applicant_body = (
+                            f"Dear {head_name},\n\n"
+                            "Your onboarding submission is received. We will review and get back to you shortly.\n\n"
+                            "Best regards,\nSSS Distributors Onboarding Team"
+                        )
+                        send_email(applicant_email, subject, applicant_body, attachment=file_bytes, filename=zip_path)
+                    st.success("Confirmation emails sent!")
+                except Exception as e:
+                    st.error(f"Failed to send emails: {e}")
+
                 shutil.rmtree(base_dir, ignore_errors=True)
                 # os.remove(zip_path)  # Uncomment if you want to remove zip after download (user may download again if commented)
             st.markdown("""
