@@ -239,10 +239,11 @@ with st.container():
     with mcols[2]:
         passport_photo = st.file_uploader("Passport Size Photo (optional for minors)", type=["png", "jpg", "jpeg"], key=f"photo_{idx}", disabled=members[idx].get("is_locked", False))
         avatar_data = members[idx].get("avatar_data")
-        if passport_photo and not avatar_data:
-            avatar_data = base64.b64encode(passport_photo.getvalue()).decode()
+        # Store passport photo bytes
+        if passport_photo:
             st.session_state[f"member_{idx}_passport_photo_bytes"] = passport_photo.getvalue()
             st.session_state[f"member_{idx}_passport_photo_filename"] = passport_photo.name
+            avatar_data = base64.b64encode(passport_photo.getvalue()).decode()
         if avatar_data:
             st.markdown(
                 f"<img src='data:image/png;base64,{avatar_data}' class='avatar' style='width:64px;height:64px;margin-top:0.5em;'>",
@@ -254,7 +255,6 @@ with st.container():
 
     docs = {}
     all_fields = True
-    required_upload_keys = []
     if name and age >= 0:
         if age < 18:
             docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{idx}", disabled=members[idx].get("is_locked", False))
@@ -419,9 +419,9 @@ if members:
                                     details_lines.append(f"    {nkey}: {nval}")
                     with open(os.path.join(member_folder, "details.txt"), "w", encoding="utf-8") as f:
                         f.write('\n'.join(details_lines))
-                    # Reconstruct files from session state
+                    # Write files from session_state
+                    # Minor
                     if member.get('age', 0) < 18:
-                        # Minor
                         bc_bytes = st.session_state.get(f"member_{idx2}_birthcert_bytes")
                         bc_fn = st.session_state.get(f"member_{idx2}_birthcert_filename")
                         if bc_bytes and bc_fn:
@@ -453,8 +453,8 @@ if members:
                         if photo_bytes and photo_fn:
                             with open(os.path.join(member_folder, photo_fn), "wb") as f:
                                 f.write(photo_bytes)
+                    # Adult
                     else:
-                        # Adult
                         aadhaar_bytes = st.session_state.get(f"member_{idx2}_aadhaar_bytes")
                         aadhaar_fn = st.session_state.get(f"member_{idx2}_aadhaar_filename")
                         if aadhaar_bytes and aadhaar_fn:
