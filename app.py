@@ -438,7 +438,7 @@ if members:
                                 gaadhaar_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_bytes")
                                 gaadhaar_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_filename")
                                 if gaadhaar_bytes and gaadhaar_fn:
-                                    zipf.writestr(f"{member_folder}/guardian_{idx_g+1}_{gaardhaar_fn}", gaadhaar_bytes)
+                                    zipf.writestr(f"{member_folder}/guardian_{idx_g+1}_{gaadhaar_fn}", gaadhaar_bytes)
                                 gbank_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_bytes")
                                 gbank_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_filename")
                                 if gbank_bytes and gbank_fn:
