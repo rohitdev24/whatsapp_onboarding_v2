@@ -5,10 +5,9 @@ from datetime import datetime
 import base64
 import shutil
 import re
-import smtplib
-import ssl
-from email.message import EmailMessage
 import requests
+import msal  # Microsoft Authentication Library for Graph API
+import json
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
@@ -18,45 +17,89 @@ def safe_name(name):
 
 # ---- Email + OneDrive Secrets ----
 EMAIL_ADDRESS = "contactus@sssdistributors.com"
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 ONEDRIVE_CLIENT_ID = st.secrets["ONEDRIVE_CLIENT_ID"]
 ONEDRIVE_CLIENT_SECRET = st.secrets["ONEDRIVE_CLIENT_SECRET"]
 ONEDRIVE_TENANT_ID = st.secrets["ONEDRIVE_TENANT_ID"]
 
-def send_email(to, subject, body, attachment=None, filename=None):
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_ADDRESS
-    msg["To"] = to
-    msg.set_content(body)
-    if attachment and filename:
-        msg.add_attachment(attachment, maintype="application", subtype="zip", filename=filename)
-    context = ssl.create_default_context()
-    with smtplib.SMTP("smtp.office365.com", 587) as smtp:
-        smtp.starttls(context=context)
-        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-        smtp.send_message(msg)
+# Microsoft Graph API Email Send Function (no SMTP AUTH required)
+def send_email_graph_api(to, subject, body, attachment_bytes=None, attachment_filename=None):
+    # Authenticate using client credentials flow
+    authority = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}"
+    app = msal.ConfidentialClientApplication(
+        ONEDRIVE_CLIENT_ID,
+        authority=authority,
+        client_credential=ONEDRIVE_CLIENT_SECRET,
+    )
+    scopes = ["https://graph.microsoft.com/.default"]
+    token_result = app.acquire_token_for_client(scopes=scopes)
+    if "access_token" not in token_result:
+        st.error("Failed to authenticate with Microsoft Graph for email sending.")
+        return False
 
-def upload_to_onedrive(file_bytes, filename):
-    token_url = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}/oauth2/v2.0/token"
-    payload = {
-        "client_id": ONEDRIVE_CLIENT_ID,
-        "scope": "https://graph.microsoft.com/.default",
-        "client_secret": ONEDRIVE_CLIENT_SECRET,
-        "grant_type": "client_credentials"
+    access_token = token_result["access_token"]
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {
+                "contentType": "Text",
+                "content": body
+            },
+            "toRecipients": [
+                {"emailAddress": {"address": to}}
+            ],
+            "from": {"emailAddress": {"address": EMAIL_ADDRESS}},
+        },
+        "saveToSentItems": "false"
     }
-    r = requests.post(token_url, data=payload)
-    if r.status_code != 200:
+
+    if attachment_bytes and attachment_filename:
+        # Encode the file in base64
+        b64content = base64.b64encode(attachment_bytes).decode()
+        attachment = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": attachment_filename,
+            "contentBytes": b64content
+        }
+        message["message"]["attachments"] = [attachment]
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    # Use /users/{sender}/sendMail endpoint to specify sender
+    sendmail_url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/sendMail"
+    resp = requests.post(sendmail_url, headers=headers, json=message)
+    if resp.status_code != 202:
+        st.error(f"Failed to send email: {resp.status_code} {resp.text}")
+        return False
+    return True
+
+# OneDrive Upload using Graph API
+def upload_to_onedrive(file_bytes, filename):
+    # Authenticate using client credentials flow
+    authority = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}"
+    app = msal.ConfidentialClientApplication(
+        ONEDRIVE_CLIENT_ID,
+        authority=authority,
+        client_credential=ONEDRIVE_CLIENT_SECRET,
+    )
+    scopes = ["https://graph.microsoft.com/.default"]
+    token_result = app.acquire_token_for_client(scopes=scopes)
+    if "access_token" not in token_result:
         st.error("Failed to authenticate with Microsoft Graph for OneDrive upload.")
         return None
-    access_token = r.json()["access_token"]
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/octet-stream"}
-    upload_url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{filename}:/content"
-    upload_resp = requests.put(upload_url, headers=headers, data=file_bytes)
-    if upload_resp.status_code not in [200,201]:
-        st.error("Failed to upload file to OneDrive.")
+    access_token = token_result["access_token"]
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/octet-stream"
+    }
+    # Upload to the root of sender's OneDrive
+    upload_url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/root:/{filename}:/content"
+    resp = requests.put(upload_url, headers=headers, data=file_bytes)
+    if resp.status_code not in [200, 201]:
+        st.error(f"Failed to upload file to OneDrive: {resp.status_code} {resp.text}")
         return None
-    return upload_resp.json().get("webUrl", None)
+    return resp.json().get("webUrl", None)
 
 # ---- CSS for modern UI and horizontal radio tabs ----
 st.markdown("""
@@ -103,23 +146,37 @@ with st.container():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # -- Family Head Details --
+    # ---------- Fixed Session State for Family Info ----------
+    if "members_count" not in st.session_state:
+        st.session_state["members_count"] = 1
+    if "family_head_name" not in st.session_state:
+        st.session_state["family_head_name"] = ""
+    if "family_head_age" not in st.session_state:
+        st.session_state["family_head_age"] = 0
+
     with st.form("family_form", clear_on_submit=False):
         cols = st.columns([2,1,1])
         with cols[0]:
-            head_name = st.text_input("Primary Applicant Name", placeholder="Full name")
+            head_name = st.text_input("Primary Applicant Name", placeholder="Full name", value=st.session_state["family_head_name"])
         with cols[1]:
-            head_age = st.number_input("Primary Applicant Age", min_value=0, max_value=120, step=1)
+            head_age = st.number_input("Primary Applicant Age", min_value=0, max_value=120, step=1, value=st.session_state["family_head_age"])
         with cols[2]:
-            members_count = st.number_input("How many members wish to invest?", min_value=1, max_value=10, step=1, value=1)
+            members_count = st.number_input("How many members wish to invest?", min_value=1, max_value=10, step=1, value=st.session_state["members_count"])
         family_submitted = st.form_submit_button("Confirm Family Info")
+        if family_submitted:
+            st.session_state["family_head_name"] = head_name
+            st.session_state["family_head_age"] = head_age
+            st.session_state["members_count"] = members_count
 
-    # --------- Session state for members and active tab ----------
+    # Only reset session state on first load or when family info is updated
     if "members" not in st.session_state or family_submitted:
         st.session_state["members"] = [
             {"name": "", "age": 0, "avatar": None, "avatar_data": None, "is_complete": False}
-            for _ in range(int(members_count))
+            for _ in range(int(st.session_state["members_count"]))
         ]
+        st.session_state["tab_names"] = []
+        st.session_state["active_tab"] = 0
+
     members = st.session_state["members"]
 
     tab_names = [m["name"] if m["name"] else f"👤 Member {i+1}" for i, m in enumerate(members)]
@@ -318,7 +375,7 @@ if members:
                             fname = f"minor_pan_card.{ext}"
                             with open(os.path.join(folder, fname), "wb") as f:
                                 f.write(file.getvalue())
-                zip_path = f"{safe_name(head_name)}_onboarding.zip"
+                zip_path = f"{safe_name(st.session_state['family_head_name'])}_onboarding.zip"
                 with zipfile.ZipFile(zip_path, "w") as zipf:
                     for root, _, files in os.walk(base_dir):
                         for file in files:
@@ -345,23 +402,23 @@ if members:
                 # Fallback if only minors: admin email only
                 subject = "✨ SSS Distributors Onboarding Submission Received"
                 admin_body = (
-                    f"New onboarding submission from {head_name}.\n"
+                    f"New onboarding submission from {st.session_state['family_head_name']}.\n"
                     f"Submission time: {timestamp}\n"
                     f"Family members: {', '.join([m['name'] for m in members])}\n"
                     f"Download all documents from OneDrive: {onedrive_link}\n"
                 )
-                try:
-                    send_email(EMAIL_ADDRESS, subject, admin_body, attachment=file_bytes, filename=zip_path)
-                    if applicant_email:
-                        applicant_body = (
-                            f"Dear {head_name},\n\n"
-                            "Your onboarding submission is received. We will review and get back to you shortly.\n\n"
-                            "Best regards,\nSSS Distributors Onboarding Team"
-                        )
-                        send_email(applicant_email, subject, applicant_body, attachment=file_bytes, filename=zip_path)
+                emails_ok = send_email_graph_api(EMAIL_ADDRESS, subject, admin_body, attachment_bytes=file_bytes, attachment_filename=zip_path)
+                if applicant_email:
+                    applicant_body = (
+                        f"Dear {st.session_state['family_head_name']},\n\n"
+                        "Your onboarding submission is received. We will review and get back to you shortly.\n\n"
+                        "Best regards,\nSSS Distributors Onboarding Team"
+                    )
+                    emails_ok = emails_ok and send_email_graph_api(applicant_email, subject, applicant_body, attachment_bytes=file_bytes, attachment_filename=zip_path)
+                if emails_ok:
                     st.success("Confirmation emails sent!")
-                except Exception as e:
-                    st.error(f"Failed to send emails: {e}")
+                else:
+                    st.error("Failed to send emails (see above for details).")
 
                 shutil.rmtree(base_dir, ignore_errors=True)
                 # os.remove(zip_path)  # Uncomment if you want to remove zip after download (user may download again if commented)
