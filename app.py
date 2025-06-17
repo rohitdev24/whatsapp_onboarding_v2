@@ -241,6 +241,8 @@ with st.container():
         avatar_data = members[idx].get("avatar_data")
         if passport_photo and not avatar_data:
             avatar_data = base64.b64encode(passport_photo.getvalue()).decode()
+            st.session_state[f"member_{idx}_passport_photo_bytes"] = passport_photo.getvalue()
+            st.session_state[f"member_{idx}_passport_photo_filename"] = passport_photo.name
         if avatar_data:
             st.markdown(
                 f"<img src='data:image/png;base64,{avatar_data}' class='avatar' style='width:64px;height:64px;margin-top:0.5em;'>",
@@ -251,32 +253,53 @@ with st.container():
         members[idx]['avatar'], members[idx]['avatar_data'] = passport_photo, avatar_data
 
     docs = {}
-    # -- Improved completeness checking logic --
     all_fields = True
-    required_uploads = []
+    required_upload_keys = []
     if name and age >= 0:
         if age < 18:
             docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{idx}", disabled=members[idx].get("is_locked", False))
+            if docs['Birth Certificate']:
+                st.session_state[f"member_{idx}_birthcert_bytes"] = docs['Birth Certificate'].getvalue()
+                st.session_state[f"member_{idx}_birthcert_filename"] = docs['Birth Certificate'].name
             docs['Minor PAN Card (optional)'] = st.file_uploader("Minor PAN Card (optional)", type=["jpg", "jpeg", "png", "pdf"], key=f"minorpancard_{idx}", disabled=members[idx].get("is_locked", False))
+            if docs['Minor PAN Card (optional)']:
+                st.session_state[f"member_{idx}_minorpancard_bytes"] = docs['Minor PAN Card (optional)'].getvalue()
+                st.session_state[f"member_{idx}_minorpancard_filename"] = docs['Minor PAN Card (optional)'].name
             guardian_list = []
             num_guardians = st.number_input(f"Number of guardians?", min_value=1, max_value=2, value=1, key=f"guardian_count_{idx}", disabled=members[idx].get("is_locked", False))
             for g in range(int(num_guardians)):
                 with st.expander(f"Guardian {g+1} Details"):
                     guardian = {}
                     guardian['Guardian PAN'] = st.file_uploader("Guardian PAN Card", key=f"guardian_pan_{idx}_{g}", disabled=members[idx].get("is_locked", False))
+                    if guardian['Guardian PAN']:
+                        st.session_state[f"member_{idx}_guardian_{g}_pan_bytes"] = guardian['Guardian PAN'].getvalue()
+                        st.session_state[f"member_{idx}_guardian_{g}_pan_filename"] = guardian['Guardian PAN'].name
                     guardian['Guardian Aadhaar'] = st.file_uploader("Guardian Aadhaar", key=f"guardian_aadhaar_{idx}_{g}", disabled=members[idx].get("is_locked", False))
+                    if guardian['Guardian Aadhaar']:
+                        st.session_state[f"member_{idx}_guardian_{g}_aadhaar_bytes"] = guardian['Guardian Aadhaar'].getvalue()
+                        st.session_state[f"member_{idx}_guardian_{g}_aadhaar_filename"] = guardian['Guardian Aadhaar'].name
                     guardian['Guardian Bank Statement/Cheque'] = st.file_uploader("Guardian Bank Statement or Cancelled Cheque", key=f"guardian_bank_{idx}_{g}", disabled=members[idx].get("is_locked", False))
+                    if guardian['Guardian Bank Statement/Cheque']:
+                        st.session_state[f"member_{idx}_guardian_{g}_bank_bytes"] = guardian['Guardian Bank Statement/Cheque'].getvalue()
+                        st.session_state[f"member_{idx}_guardian_{g}_bank_filename"] = guardian['Guardian Bank Statement/Cheque'].name
                     guardian_list.append(guardian)
             docs['Guardians'] = guardian_list
-            # Check only mandatory fields
             all_fields = bool(docs['Birth Certificate']) and num_guardians >= 1
             for guard in guardian_list:
-                # Only 'Guardian PAN' and 'Guardian Aadhaar' are strictly required, 'Guardian Bank Statement/Cheque' optional?
                 all_fields = all_fields and bool(guard.get("Guardian PAN")) and bool(guard.get("Guardian Aadhaar"))
         else:
             docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{idx}", disabled=members[idx].get("is_locked", False))
+            if docs['E-Aadhaar']:
+                st.session_state[f"member_{idx}_aadhaar_bytes"] = docs['E-Aadhaar'].getvalue()
+                st.session_state[f"member_{idx}_aadhaar_filename"] = docs['E-Aadhaar'].name
             docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}", disabled=members[idx].get("is_locked", False))
+            if docs['PAN Card']:
+                st.session_state[f"member_{idx}_pan_bytes"] = docs['PAN Card'].getvalue()
+                st.session_state[f"member_{idx}_pan_filename"] = docs['PAN Card'].name
             docs['Cancelled Cheque/Bank Statement'] = st.file_uploader("Cancelled Cheque or Bank Statement", key=f"cheque_{idx}", disabled=members[idx].get("is_locked", False))
+            if docs['Cancelled Cheque/Bank Statement']:
+                st.session_state[f"member_{idx}_cheque_bytes"] = docs['Cancelled Cheque/Bank Statement'].getvalue()
+                st.session_state[f"member_{idx}_cheque_filename"] = docs['Cancelled Cheque/Bank Statement'].name
             docs['Passport Size Photo'] = passport_photo
             docs['Email'] = st.text_input("Email", key=f"email_{idx}", value=members[idx].get("email", ""), disabled=members[idx].get("is_locked", False))
             docs['Phone'] = st.text_input("Phone Number", key=f"phone_{idx}", value=members[idx].get("phone", ""), disabled=members[idx].get("is_locked", False))
@@ -290,11 +313,13 @@ with st.container():
                     nominee['Name'] = st.text_input("Nominee Name", key=f"nominee_name_{idx}_{n}", disabled=members[idx].get("is_locked", False))
                     nominee['Relation'] = st.text_input("Relation", key=f"nominee_relation_{idx}_{n}", disabled=members[idx].get("is_locked", False))
                     nominee['PAN Card'] = st.file_uploader("Nominee PAN Card", key=f"nominee_pan_{idx}_{n}", disabled=members[idx].get("is_locked", False))
+                    if nominee['PAN Card']:
+                        st.session_state[f"member_{idx}_nominee_{n}_pan_bytes"] = nominee['PAN Card'].getvalue()
+                        st.session_state[f"member_{idx}_nominee_{n}_pan_filename"] = nominee['PAN Card'].name
                     nominee['Occupation'] = st.text_input("Occupation", key=f"nominee_occ_{idx}_{n}", disabled=members[idx].get("is_locked", False))
                     nominee['Income'] = st.text_input("Income", key=f"nominee_income_{idx}_{n}", disabled=members[idx].get("is_locked", False))
                     nominee_list.append(nominee)
             docs['Nominees'] = nominee_list
-            # Only require the main fields, not optional ones (and not file uploaders that are not present).
             required_fields = [
                 docs.get('E-Aadhaar'), docs.get('PAN Card'), docs.get('Cancelled Cheque/Bank Statement'),
                 docs.get('Email'), docs.get('Phone'), docs.get('Mother Name'), docs.get('Place of Birth'),
@@ -302,7 +327,6 @@ with st.container():
             ]
             all_fields = all(required_fields)
             for nm in nominee_list:
-                # Only require Nominee Name and Relation, not all fields
                 all_fields = all_fields and bool(nm.get("Name")) and bool(nm.get("Relation"))
     else:
         all_fields = False
@@ -311,7 +335,6 @@ with st.container():
         members[idx]['docs'] = docs
         members[idx]['is_complete'] = all_fields
 
-    # Per-individual submit
     if not members[idx].get("is_locked", False):
         if st.button("Submit Member Data", key=f"submit_member_{idx}"):
             if all_fields:
@@ -396,30 +419,68 @@ if members:
                                     details_lines.append(f"    {nkey}: {nval}")
                     with open(os.path.join(member_folder, "details.txt"), "w", encoding="utf-8") as f:
                         f.write('\n'.join(details_lines))
-                    if member.get("avatar"):
-                        ext = member['avatar'].name.split('.')[-1]
-                        with open(os.path.join(member_folder, f"passport_photo.{ext}"), "wb") as f:
-                            f.write(member['avatar'].getvalue())
-                    docs = member.get('docs', {})
-                    for key, file in docs.items():
-                        if isinstance(file, list):
-                            for idx3, subdict in enumerate(file):
-                                for subkey, subfile in subdict.items():
-                                    if hasattr(subfile, 'getvalue'):
-                                        ext = subfile.name.split('.')[-1]
-                                        fname = f"{safe_name(key)}_{idx3+1}_{safe_name(subkey)}.{ext}"
-                                        with open(os.path.join(member_folder, fname), "wb") as f:
-                                            f.write(subfile.getvalue())
-                        elif hasattr(file, 'getvalue') and key not in ['Passport Size Photo', 'Minor PAN Card (optional)']:
-                            ext = file.name.split('.')[-1]
-                            fname = f"{safe_name(key)}.{ext}"
-                            with open(os.path.join(member_folder, fname), "wb") as f:
-                                f.write(file.getvalue())
-                        elif key == 'Minor PAN Card (optional)' and hasattr(file, 'getvalue'):
-                            ext = file.name.split('.')[-1]
-                            fname = f"minor_pan_card.{ext}"
-                            with open(os.path.join(member_folder, fname), "wb") as f:
-                                f.write(file.getvalue())
+                    # Reconstruct files from session state
+                    if member.get('age', 0) < 18:
+                        # Minor
+                        bc_bytes = st.session_state.get(f"member_{idx2}_birthcert_bytes")
+                        bc_fn = st.session_state.get(f"member_{idx2}_birthcert_filename")
+                        if bc_bytes and bc_fn:
+                            with open(os.path.join(member_folder, bc_fn), "wb") as f:
+                                f.write(bc_bytes)
+                        pan_bytes = st.session_state.get(f"member_{idx2}_minorpancard_bytes")
+                        pan_fn = st.session_state.get(f"member_{idx2}_minorpancard_filename")
+                        if pan_bytes and pan_fn:
+                            with open(os.path.join(member_folder, pan_fn), "wb") as f:
+                                f.write(pan_bytes)
+                        for idx_g, guardian in enumerate(docs.get('Guardians', [])):
+                            gpan_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_pan_bytes")
+                            gpan_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_pan_filename")
+                            if gpan_bytes and gpan_fn:
+                                with open(os.path.join(member_folder, gpan_fn), "wb") as f:
+                                    f.write(gpan_bytes)
+                            gaadhaar_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_bytes")
+                            gaadhaar_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_filename")
+                            if gaadhaar_bytes and gaadhaar_fn:
+                                with open(os.path.join(member_folder, gaadhaar_fn), "wb") as f:
+                                    f.write(gaadhaar_bytes)
+                            gbank_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_bytes")
+                            gbank_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_filename")
+                            if gbank_bytes and gbank_fn:
+                                with open(os.path.join(member_folder, gbank_fn), "wb") as f:
+                                    f.write(gbank_bytes)
+                        photo_bytes = st.session_state.get(f"member_{idx2}_passport_photo_bytes")
+                        photo_fn = st.session_state.get(f"member_{idx2}_passport_photo_filename")
+                        if photo_bytes and photo_fn:
+                            with open(os.path.join(member_folder, photo_fn), "wb") as f:
+                                f.write(photo_bytes)
+                    else:
+                        # Adult
+                        aadhaar_bytes = st.session_state.get(f"member_{idx2}_aadhaar_bytes")
+                        aadhaar_fn = st.session_state.get(f"member_{idx2}_aadhaar_filename")
+                        if aadhaar_bytes and aadhaar_fn:
+                            with open(os.path.join(member_folder, aadhaar_fn), "wb") as f:
+                                f.write(aadhaar_bytes)
+                        pan_bytes = st.session_state.get(f"member_{idx2}_pan_bytes")
+                        pan_fn = st.session_state.get(f"member_{idx2}_pan_filename")
+                        if pan_bytes and pan_fn:
+                            with open(os.path.join(member_folder, pan_fn), "wb") as f:
+                                f.write(pan_bytes)
+                        cheque_bytes = st.session_state.get(f"member_{idx2}_cheque_bytes")
+                        cheque_fn = st.session_state.get(f"member_{idx2}_cheque_filename")
+                        if cheque_bytes and cheque_fn:
+                            with open(os.path.join(member_folder, cheque_fn), "wb") as f:
+                                f.write(cheque_bytes)
+                        photo_bytes = st.session_state.get(f"member_{idx2}_passport_photo_bytes")
+                        photo_fn = st.session_state.get(f"member_{idx2}_passport_photo_filename")
+                        if photo_bytes and photo_fn:
+                            with open(os.path.join(member_folder, photo_fn), "wb") as f:
+                                f.write(photo_bytes)
+                        for idx_n, nominee in enumerate(docs.get('Nominees', [])):
+                            npan_bytes = st.session_state.get(f"member_{idx2}_nominee_{idx_n}_pan_bytes")
+                            npan_fn = st.session_state.get(f"member_{idx2}_nominee_{idx_n}_pan_filename")
+                            if npan_bytes and npan_fn:
+                                with open(os.path.join(member_folder, npan_fn), "wb") as f:
+                                    f.write(npan_bytes)
                 zip_name = f"{safe_name(st.session_state['family_head_name'])}_onboarding.zip"
                 zip_path = os.path.join(family_head_folder, zip_name)
                 with zipfile.ZipFile(zip_path, "w") as zipf:
@@ -458,7 +519,6 @@ if members:
                 applicant_body = (
                     f"Dear {st.session_state['family_head_name']},\n\n"
                     "Your onboarding submission is received. We will review and get back to you shortly.\n\n"
-                    f"You can also access your submitted documents from this secure link: {onedrive_link}\n\n"
                     "Best regards,\nSSS Distributors Onboarding Team"
                 )
                 emails_ok = send_email_graph_api(
