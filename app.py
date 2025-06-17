@@ -6,24 +6,19 @@ import base64
 import shutil
 import re
 import requests
-import msal  # Microsoft Authentication Library for Graph API
-import json
+import msal
 
 st.set_page_config(page_title="✨ Onboarding Portal", layout="wide")
 
 def safe_name(name):
-    # Replace spaces and any character that's not a-z, A-Z, 0-9, or _ with _
     return re.sub(r'[^A-Za-z0-9_]', '_', name.replace(' ', '_'))
 
-# ---- Email + OneDrive Secrets ----
 EMAIL_ADDRESS = "contactus@sssdistributors.com"
 ONEDRIVE_CLIENT_ID = st.secrets["ONEDRIVE_CLIENT_ID"]
 ONEDRIVE_CLIENT_SECRET = st.secrets["ONEDRIVE_CLIENT_SECRET"]
 ONEDRIVE_TENANT_ID = st.secrets["ONEDRIVE_TENANT_ID"]
 
-# Microsoft Graph API Email Send Function (no SMTP AUTH required)
 def send_email_graph_api(to, subject, body, attachment_bytes=None, attachment_filename=None):
-    # Authenticate using client credentials flow
     authority = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}"
     app = msal.ConfidentialClientApplication(
         ONEDRIVE_CLIENT_ID,
@@ -53,7 +48,6 @@ def send_email_graph_api(to, subject, body, attachment_bytes=None, attachment_fi
     }
 
     if attachment_bytes and attachment_filename:
-        # Encode the file in base64
         b64content = base64.b64encode(attachment_bytes).decode()
         attachment = {
             "@odata.type": "#microsoft.graph.fileAttachment",
@@ -66,7 +60,6 @@ def send_email_graph_api(to, subject, body, attachment_bytes=None, attachment_fi
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-    # Use /users/{sender}/sendMail endpoint to specify sender
     sendmail_url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/sendMail"
     resp = requests.post(sendmail_url, headers=headers, json=message)
     if resp.status_code != 202:
@@ -74,8 +67,41 @@ def send_email_graph_api(to, subject, body, attachment_bytes=None, attachment_fi
         return False
     return True
 
-# OneDrive Upload using Graph API
-def upload_to_onedrive(file_bytes, filename):
+def create_onedrive_folder_if_not_exists(access_token, folder_path_list):
+    """
+    Ensure that a folder structure exists in OneDrive.
+    folder_path_list: e.g. ["Client Data", "FamilyHead"]
+    Returns the OneDrive folder id for the last folder in the path.
+    """
+    parent_id = None
+    for idx, folder in enumerate(folder_path_list):
+        if parent_id:
+            url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/items/{parent_id}/children"
+        else:
+            url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/root/children"
+        resp = requests.get(url, headers={"Authorization": f"Bearer {access_token}"})
+        if resp.status_code not in [200, 201]:
+            st.error(f"Failed to list folders in OneDrive: {resp.status_code} {resp.text}")
+            return None
+        folders = resp.json().get("value", [])
+        folder_item = next((f for f in folders if f['name'] == folder and f['folder']), None)
+        if folder_item:
+            parent_id = folder_item['id']
+        else:
+            # create the folder in current parent
+            create_url = url
+            create_resp = requests.post(
+                create_url,
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                json={"name": folder, "folder": {}, "@microsoft.graph.conflictBehavior": "rename"}
+            )
+            if create_resp.status_code not in [200, 201]:
+                st.error(f"Failed to create folder {folder} in OneDrive: {create_resp.status_code} {create_resp.text}")
+                return None
+            parent_id = create_resp.json()['id']
+    return parent_id
+
+def upload_to_onedrive(file_bytes, folder_path_list, filename):
     # Authenticate using client credentials flow
     authority = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}"
     app = msal.ConfidentialClientApplication(
@@ -89,12 +115,19 @@ def upload_to_onedrive(file_bytes, filename):
         st.error("Failed to authenticate with Microsoft Graph for OneDrive upload.")
         return None
     access_token = token_result["access_token"]
+
+    # Ensure folder structure exists and get the parent folder id
+    parent_id = create_onedrive_folder_if_not_exists(access_token, folder_path_list)
+    if not parent_id:
+        st.error("Could not create/find OneDrive folders.")
+        return None
+
+    # Upload file to that folder
+    upload_url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/items/{parent_id}:/"+filename+":/content"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/octet-stream"
     }
-    # Upload to the root of sender's OneDrive
-    upload_url = f"https://graph.microsoft.com/v1.0/users/{EMAIL_ADDRESS}/drive/root:/{filename}:/content"
     resp = requests.put(upload_url, headers=headers, data=file_bytes)
     if resp.status_code not in [200, 201]:
         st.error(f"Failed to upload file to OneDrive: {resp.status_code} {resp.text}")
@@ -108,7 +141,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --------- Clean Header (no logo, just title and contact) ----------
 st.markdown("""
 <div class="glass-header" style="user-select:none;">
     <span class="glass-header-title">✨ Onboarding Portal</span>
@@ -116,7 +148,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --------- Sidebar progress ----------
 with st.sidebar:
     st.markdown("<div class='glass-sidebar'>", unsafe_allow_html=True)
     st.image(
@@ -141,12 +172,10 @@ with st.sidebar:
         )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --------- Main Glass Card ----------
 with st.container():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # ---------- Fixed Session State for Family Info ----------
     if "members_count" not in st.session_state:
         st.session_state["members_count"] = 1
     if "family_head_name" not in st.session_state:
@@ -161,7 +190,9 @@ with st.container():
         with cols[1]:
             head_age = st.number_input("Primary Applicant Age", min_value=0, max_value=120, step=1, value=st.session_state["family_head_age"])
         with cols[2]:
-            members_count = st.number_input("How many members wish to invest?", min_value=1, max_value=10, step=1, value=st.session_state["members_count"])
+            members_count = st.number_input(
+                "How many members wish to invest?", min_value=1, max_value=10, step=1, value=st.session_state["members_count"]
+            )
         family_submitted = st.form_submit_button("Confirm Family Info")
         if family_submitted:
             st.session_state["family_head_name"] = head_name
@@ -171,11 +202,20 @@ with st.container():
     # Only reset session state on first load or when family info is updated
     if "members" not in st.session_state or family_submitted:
         st.session_state["members"] = [
-            {"name": "", "age": 0, "avatar": None, "avatar_data": None, "is_complete": False}
+            {"name": "", "age": 0, "avatar": None, "avatar_data": None, "is_complete": False, "is_locked": False}
             for _ in range(int(st.session_state["members_count"]))
         ]
         st.session_state["tab_names"] = []
         st.session_state["active_tab"] = 0
+        if st.session_state["family_head_name"]:
+            st.session_state["members"][0]["name"] = st.session_state["family_head_name"]
+            st.session_state["members"][0]["age"] = st.session_state["family_head_age"]
+
+    if st.session_state.get("members") and st.session_state.get("family_head_name"):
+        if not st.session_state["members"][0]["name"]:
+            st.session_state["members"][0]["name"] = st.session_state["family_head_name"]
+        if not st.session_state["members"][0]["age"]:
+            st.session_state["members"][0]["age"] = st.session_state["family_head_age"]
 
     members = st.session_state["members"]
 
@@ -186,7 +226,6 @@ with st.container():
     else:
         st.session_state.tab_names = tab_names
 
-    # Radio as reliable tab navigation
     selected_tab = st.radio(
         "Select Member",
         options=range(len(tab_names)),
@@ -205,61 +244,61 @@ with st.container():
     st.subheader(f"Member {idx+1} Details")
     mcols = st.columns([2,1,1])
     with mcols[0]:
-        name = st.text_input("Full Name", value=members[idx].get("name", ""), key=f"name_{idx}", help="Enter legal name as per ID")
+        name = st.text_input("Full Name", value=members[idx].get("name", ""), key=f"name_{idx}", help="Enter legal name as per ID", disabled=members[idx].get("is_locked", False))
     with mcols[1]:
-        age = st.number_input("Age", min_value=0, max_value=120, value=members[idx].get("age", 0), key=f"age_{idx}")
+        age = st.number_input("Age", min_value=0, max_value=120, value=members[idx].get("age", 0), key=f"age_{idx}", disabled=members[idx].get("is_locked", False))
     with mcols[2]:
-        passport_photo = st.file_uploader("Passport Size Photo (optional for minors)", type=["png", "jpg", "jpeg"], key=f"photo_{idx}")
-        avatar_data = None
-        if passport_photo:
+        passport_photo = st.file_uploader("Passport Size Photo (optional for minors)", type=["png", "jpg", "jpeg"], key=f"photo_{idx}", disabled=members[idx].get("is_locked", False))
+        avatar_data = members[idx].get("avatar_data")
+        if passport_photo and not avatar_data:
             avatar_data = base64.b64encode(passport_photo.getvalue()).decode()
+        if avatar_data:
             st.markdown(
                 f"<img src='data:image/png;base64,{avatar_data}' class='avatar' style='width:64px;height:64px;margin-top:0.5em;'>",
                 unsafe_allow_html=True
             )
-    members[idx]['name'], members[idx]['age'] = name, age
-    members[idx]['avatar'], members[idx]['avatar_data'] = passport_photo, avatar_data
+    if not members[idx].get("is_locked", False):  # Only update if not locked
+        members[idx]['name'], members[idx]['age'] = name, age
+        members[idx]['avatar'], members[idx]['avatar_data'] = passport_photo, avatar_data
 
-    # -- Documents --
     docs = {}
     all_fields = True
     if name and age >= 0:
         if age < 18:
-            docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{idx}")
-            docs['Minor PAN Card (optional)'] = st.file_uploader("Minor PAN Card (optional)", type=["jpg", "jpeg", "png", "pdf"], key=f"minorpancard_{idx}")
+            docs['Birth Certificate'] = st.file_uploader("Birth Certificate", key=f"birthcert_{idx}", disabled=members[idx].get("is_locked", False))
+            docs['Minor PAN Card (optional)'] = st.file_uploader("Minor PAN Card (optional)", type=["jpg", "jpeg", "png", "pdf"], key=f"minorpancard_{idx}", disabled=members[idx].get("is_locked", False))
             guardian_list = []
-            num_guardians = st.number_input(f"Number of guardians?", min_value=1, max_value=2, value=1, key=f"guardian_count_{idx}")
+            num_guardians = st.number_input(f"Number of guardians?", min_value=1, max_value=2, value=1, key=f"guardian_count_{idx}", disabled=members[idx].get("is_locked", False))
             for g in range(int(num_guardians)):
                 with st.expander(f"Guardian {g+1} Details"):
                     guardian = {}
-                    guardian['Guardian PAN'] = st.file_uploader("Guardian PAN Card", key=f"guardian_pan_{idx}_{g}")
-                    guardian['Guardian Aadhaar'] = st.file_uploader("Guardian Aadhaar", key=f"guardian_aadhaar_{idx}_{g}")
-                    guardian['Guardian Bank Statement/Cheque'] = st.file_uploader("Guardian Bank Statement or Cancelled Cheque", key=f"guardian_bank_{idx}_{g}")
+                    guardian['Guardian PAN'] = st.file_uploader("Guardian PAN Card", key=f"guardian_pan_{idx}_{g}", disabled=members[idx].get("is_locked", False))
+                    guardian['Guardian Aadhaar'] = st.file_uploader("Guardian Aadhaar", key=f"guardian_aadhaar_{idx}_{g}", disabled=members[idx].get("is_locked", False))
+                    guardian['Guardian Bank Statement/Cheque'] = st.file_uploader("Guardian Bank Statement or Cancelled Cheque", key=f"guardian_bank_{idx}_{g}", disabled=members[idx].get("is_locked", False))
                     guardian_list.append(guardian)
             docs['Guardians'] = guardian_list
             all_fields &= bool(docs['Birth Certificate']) and num_guardians >= 1
             for guard in guardian_list:
                 all_fields &= all(guard.get(x) for x in guard)
-            # passport_photo and minor pan are both optional for minors
         else:
-            docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{idx}")
-            docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}")
-            docs['Cancelled Cheque/Bank Statement'] = st.file_uploader("Cancelled Cheque or Bank Statement", key=f"cheque_{idx}")
+            docs['E-Aadhaar'] = st.file_uploader("E-Aadhaar (Masked PDF)", type=["pdf"], key=f"aadhaar_{idx}", disabled=members[idx].get("is_locked", False))
+            docs['PAN Card'] = st.file_uploader("PAN Card", type=["jpg", "jpeg", "png", "pdf"], key=f"pan_{idx}", disabled=members[idx].get("is_locked", False))
+            docs['Cancelled Cheque/Bank Statement'] = st.file_uploader("Cancelled Cheque or Bank Statement", key=f"cheque_{idx}", disabled=members[idx].get("is_locked", False))
             docs['Passport Size Photo'] = passport_photo
-            docs['Email'] = st.text_input("Email", key=f"email_{idx}", value=members[idx].get("email", ""))
-            docs['Phone'] = st.text_input("Phone Number", key=f"phone_{idx}", value=members[idx].get("phone", ""))
-            docs['Mother Name'] = st.text_input("Mother's Name", key=f"mother_{idx}", value=members[idx].get("mother", ""))
-            docs['Place of Birth'] = st.text_input("Place of Birth", key=f"birthplace_{idx}", value=members[idx].get("birthplace", ""))
+            docs['Email'] = st.text_input("Email", key=f"email_{idx}", value=members[idx].get("email", ""), disabled=members[idx].get("is_locked", False))
+            docs['Phone'] = st.text_input("Phone Number", key=f"phone_{idx}", value=members[idx].get("phone", ""), disabled=members[idx].get("is_locked", False))
+            docs['Mother Name'] = st.text_input("Mother's Name", key=f"mother_{idx}", value=members[idx].get("mother", ""), disabled=members[idx].get("is_locked", False))
+            docs['Place of Birth'] = st.text_input("Place of Birth", key=f"birthplace_{idx}", value=members[idx].get("birthplace", ""), disabled=members[idx].get("is_locked", False))
             nominee_list = []
-            num_nominees = st.number_input(f"Number of nominees?", min_value=1, max_value=3, value=1, key=f"nominee_count_{idx}")
+            num_nominees = st.number_input(f"Number of nominees?", min_value=1, max_value=3, value=1, key=f"nominee_count_{idx}", disabled=members[idx].get("is_locked", False))
             for n in range(int(num_nominees)):
                 with st.expander(f"Nominee {n+1} Details"):
                     nominee = {}
-                    nominee['Name'] = st.text_input("Nominee Name", key=f"nominee_name_{idx}_{n}")
-                    nominee['Relation'] = st.text_input("Relation", key=f"nominee_relation_{idx}_{n}")
-                    nominee['PAN Card'] = st.file_uploader("Nominee PAN Card", key=f"nominee_pan_{idx}_{n}")
-                    nominee['Occupation'] = st.text_input("Occupation", key=f"nominee_occ_{idx}_{n}")
-                    nominee['Income'] = st.text_input("Income", key=f"nominee_income_{idx}_{n}")
+                    nominee['Name'] = st.text_input("Nominee Name", key=f"nominee_name_{idx}_{n}", disabled=members[idx].get("is_locked", False))
+                    nominee['Relation'] = st.text_input("Relation", key=f"nominee_relation_{idx}_{n}", disabled=members[idx].get("is_locked", False))
+                    nominee['PAN Card'] = st.file_uploader("Nominee PAN Card", key=f"nominee_pan_{idx}_{n}", disabled=members[idx].get("is_locked", False))
+                    nominee['Occupation'] = st.text_input("Occupation", key=f"nominee_occ_{idx}_{n}", disabled=members[idx].get("is_locked", False))
+                    nominee['Income'] = st.text_input("Income", key=f"nominee_income_{idx}_{n}", disabled=members[idx].get("is_locked", False))
                     nominee_list.append(nominee)
             docs['Nominees'] = nominee_list
             all_fields &= all([
@@ -271,15 +310,27 @@ with st.container():
     else:
         all_fields = False
 
-    members[idx]['docs'] = docs
-    members[idx]['is_complete'] = all_fields
+    if not members[idx].get("is_locked", False):
+        members[idx]['docs'] = docs
+        members[idx]['is_complete'] = all_fields
 
-    # -- Progress calculation --
-    completed_forms = sum(1 for m in members if m.get("is_complete"))
+    # Per-individual submit
+    if not members[idx].get("is_locked", False):
+        if st.button("Submit Member Data", key=f"submit_member_{idx}"):
+            if all_fields:
+                members[idx]['is_locked'] = True
+                members[idx]['is_complete'] = True
+                if idx + 1 < len(members):
+                    st.session_state.active_tab = idx + 1
+                    st.experimental_rerun()
+                else:
+                    st.success("All members' data submitted. Now submit all documents for onboarding.")
+            else:
+                st.error("Please fill all required fields and upload all documents before submitting.")
 
+    completed_forms = sum(1 for m in members if m.get("is_complete", False))
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # -- Animated Progress Bar & Label --
     st.markdown("---")
     st.markdown("<span class='progress-label'>Form Completion</span>", unsafe_allow_html=True)
     percent = completed_forms / max(1, len(members))
@@ -290,7 +341,6 @@ with st.container():
     st.markdown(f"<span style='color:#b8e9ff;font-size:1.04em;'>{completed_forms} of {len(members)} complete</span>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -- Sticky Footer Submission Bar --
 if members:
     st.markdown(
         f"""
@@ -302,18 +352,17 @@ if members:
                 """,
         unsafe_allow_html=True
     )
-    # Only enable if all members complete
     if completed_forms == len(members):
-        if st.button("🚀 Submit & Download All Documents"):
+        if st.button("🚀 Submit & Upload All Documents"):
             with st.spinner("Collecting and zipping documents..."):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                base_dir = f"onboarding_{timestamp}"
+                family_head_folder = safe_name(st.session_state['family_head_name'])
+                base_dir = os.path.join(family_head_folder)
                 os.makedirs(base_dir, exist_ok=True)
                 for idx2, member in enumerate(members):
                     name = member['name']
-                    folder = os.path.join(base_dir, safe_name(name))
-                    os.makedirs(folder, exist_ok=True)
-                    # --- Write the details.txt file with all info ---
+                    member_folder = os.path.join(base_dir, safe_name(name))
+                    os.makedirs(member_folder, exist_ok=True)
                     details_lines = [
                         f"Name: {name}",
                         f"Age: {member.get('age', '')}",
@@ -347,59 +396,60 @@ if members:
                                     details_lines.append(f"    {nkey}: Uploaded")
                                 else:
                                     details_lines.append(f"    {nkey}: {nval}")
-                    # Write details.txt for the member
-                    with open(os.path.join(folder, "details.txt"), "w", encoding="utf-8") as f:
+                    with open(os.path.join(member_folder, "details.txt"), "w", encoding="utf-8") as f:
                         f.write('\n'.join(details_lines))
-                    # Save passport photo if any
                     if member.get("avatar"):
                         ext = member['avatar'].name.split('.')[-1]
-                        with open(os.path.join(folder, f"passport_photo.{ext}"), "wb") as f:
+                        with open(os.path.join(member_folder, f"passport_photo.{ext}"), "wb") as f:
                             f.write(member['avatar'].getvalue())
                     docs = member.get('docs', {})
                     for key, file in docs.items():
-                        if isinstance(file, list):  # Nominees or Guardians
+                        if isinstance(file, list):
                             for idx3, subdict in enumerate(file):
                                 for subkey, subfile in subdict.items():
                                     if hasattr(subfile, 'getvalue'):
                                         ext = subfile.name.split('.')[-1]
                                         fname = f"{safe_name(key)}_{idx3+1}_{safe_name(subkey)}.{ext}"
-                                        with open(os.path.join(folder, fname), "wb") as f:
+                                        with open(os.path.join(member_folder, fname), "wb") as f:
                                             f.write(subfile.getvalue())
                         elif hasattr(file, 'getvalue') and key not in ['Passport Size Photo', 'Minor PAN Card (optional)']:
                             ext = file.name.split('.')[-1]
                             fname = f"{safe_name(key)}.{ext}"
-                            with open(os.path.join(folder, fname), "wb") as f:
+                            with open(os.path.join(member_folder, fname), "wb") as f:
                                 f.write(file.getvalue())
                         elif key == 'Minor PAN Card (optional)' and hasattr(file, 'getvalue'):
                             ext = file.name.split('.')[-1]
                             fname = f"minor_pan_card.{ext}"
-                            with open(os.path.join(folder, fname), "wb") as f:
+                            with open(os.path.join(member_folder, fname), "wb") as f:
                                 f.write(file.getvalue())
-                zip_path = f"{safe_name(st.session_state['family_head_name'])}_onboarding.zip"
+                zip_name = f"{safe_name(st.session_state['family_head_name'])}_onboarding.zip"
+                zip_path = os.path.join(family_head_folder, zip_name)
                 with zipfile.ZipFile(zip_path, "w") as zipf:
                     for root, _, files in os.walk(base_dir):
                         for file in files:
-                            zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), base_dir))
-                st.success(f"Documents collected and zipped into {zip_path}")
+                            full_path = os.path.join(root, file)
+                            arcname = os.path.relpath(full_path, os.path.dirname(base_dir))
+                            zipf.write(full_path, arcname)
                 with open(zip_path, 'rb') as f:
-                    st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_path, mime='application/zip')
+                    st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_name, mime='application/zip')
                     file_bytes = f.read()
 
-                # --- Upload to OneDrive ---
                 st.info("Uploading to OneDrive...")
-                onedrive_link = upload_to_onedrive(file_bytes, zip_path)
+                onedrive_link = upload_to_onedrive(
+                    file_bytes,
+                    ["Client Data", safe_name(st.session_state['family_head_name'])],
+                    zip_name
+                )
                 if onedrive_link:
                     st.success("Documents uploaded to OneDrive.")
                 else:
                     st.error("Failed to upload to OneDrive.")
 
-                # --- Send Confirmation Email to Applicant (first adult's email) ---
                 applicant_email = None
                 for m in members:
                     if m.get('age', 0) >= 18:
                         applicant_email = m.get('docs', {}).get('Email', None)
                         break
-                # Fallback if only minors: admin email only
                 subject = "✨ SSS Distributors Onboarding Submission Received"
                 admin_body = (
                     f"New onboarding submission from {st.session_state['family_head_name']}.\n"
@@ -407,21 +457,25 @@ if members:
                     f"Family members: {', '.join([m['name'] for m in members])}\n"
                     f"Download all documents from OneDrive: {onedrive_link}\n"
                 )
-                emails_ok = send_email_graph_api(EMAIL_ADDRESS, subject, admin_body, attachment_bytes=file_bytes, attachment_filename=zip_path)
+                applicant_body = (
+                    f"Dear {st.session_state['family_head_name']},\n\n"
+                    "Your onboarding submission is received. We will review and get back to you shortly.\n\n"
+                    f"You can also access your submitted documents from this secure link: {onedrive_link}\n\n"
+                    "Best regards,\nSSS Distributors Onboarding Team"
+                )
+                emails_ok = send_email_graph_api(
+                    EMAIL_ADDRESS, subject, admin_body, attachment_bytes=file_bytes, attachment_filename=zip_name
+                )
                 if applicant_email:
-                    applicant_body = (
-                        f"Dear {st.session_state['family_head_name']},\n\n"
-                        "Your onboarding submission is received. We will review and get back to you shortly.\n\n"
-                        "Best regards,\nSSS Distributors Onboarding Team"
+                    emails_ok = emails_ok and send_email_graph_api(
+                        applicant_email, subject, applicant_body, attachment_bytes=file_bytes, attachment_filename=zip_name
                     )
-                    emails_ok = emails_ok and send_email_graph_api(applicant_email, subject, applicant_body, attachment_bytes=file_bytes, attachment_filename=zip_path)
                 if emails_ok:
                     st.success("Confirmation emails sent!")
                 else:
                     st.error("Failed to send emails (see above for details).")
 
-                shutil.rmtree(base_dir, ignore_errors=True)
-                # os.remove(zip_path)  # Uncomment if you want to remove zip after download (user may download again if commented)
+                shutil.rmtree(family_head_folder, ignore_errors=True)
             st.markdown("""
                 ### Next Steps
                 - You'll receive an AOF (Account Opening Form) shortly for confirmation.
