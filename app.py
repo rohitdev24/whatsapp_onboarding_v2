@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import zipfile
+import io
 from datetime import datetime
 import base64
 import shutil
@@ -239,7 +240,6 @@ with st.container():
     with mcols[2]:
         passport_photo = st.file_uploader("Passport Size Photo (optional for minors)", type=["png", "jpg", "jpeg"], key=f"photo_{idx}", disabled=members[idx].get("is_locked", False))
         avatar_data = members[idx].get("avatar_data")
-        # Store passport photo bytes
         if passport_photo:
             st.session_state[f"member_{idx}_passport_photo_bytes"] = passport_photo.getvalue()
             st.session_state[f"member_{idx}_passport_photo_filename"] = passport_photo.name
@@ -378,124 +378,107 @@ if members:
             with st.spinner("Collecting and zipping documents..."):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 family_head_folder = safe_name(st.session_state['family_head_name'])
-                base_dir = os.path.join(family_head_folder)
-                os.makedirs(base_dir, exist_ok=True)
-                for idx2, member in enumerate(members):
-                    name = member['name']
-                    member_folder = os.path.join(base_dir, safe_name(name))
-                    os.makedirs(member_folder, exist_ok=True)
-                    details_lines = [
-                        f"Name: {name}",
-                        f"Age: {member.get('age', '')}",
-                    ]
-                    docs = member.get('docs', {})
-                    if member.get('age', 0) < 18:
-                        details_lines.append("Type: Minor")
-                        details_lines.append(f"Number of Guardians: {len(docs.get('Guardians', []))}")
-                        for idx_g, guardian in enumerate(docs.get('Guardians', [])):
-                            details_lines.append(f"  Guardian {idx_g+1}:")
-                            for gkey, gfile in guardian.items():
-                                details_lines.append(f"    {gkey}: {'Uploaded' if gfile else 'Not uploaded'}")
-                        details_lines.append(f"Birth Certificate: {'Uploaded' if docs.get('Birth Certificate') else 'Not uploaded'}")
-                        details_lines.append(f"Minor PAN Card: {'Uploaded' if docs.get('Minor PAN Card (optional)') else 'Not uploaded'}")
-                    else:
-                        details_lines.append("Type: Adult")
-                        details_lines.append(f"E-Aadhaar: {'Uploaded' if docs.get('E-Aadhaar') else 'Not uploaded'}")
-                        details_lines.append(f"PAN Card: {'Uploaded' if docs.get('PAN Card') else 'Not uploaded'}")
-                        details_lines.append(f"Cancelled Cheque/Bank Statement: {'Uploaded' if docs.get('Cancelled Cheque/Bank Statement') else 'Not uploaded'}")
-                        details_lines.append(f"Passport Size Photo: {'Uploaded' if docs.get('Passport Size Photo') else 'Not uploaded'}")
-                        details_lines.append(f"Email: {docs.get('Email', '')}")
-                        details_lines.append(f"Phone: {docs.get('Phone', '')}")
-                        details_lines.append(f"Mother Name: {docs.get('Mother Name', '')}")
-                        details_lines.append(f"Place of Birth: {docs.get('Place of Birth', '')}")
-                        nominee_list = docs.get('Nominees', [])
-                        details_lines.append(f"Number of Nominees: {len(nominee_list)}")
-                        for idx_n, nominee in enumerate(nominee_list):
-                            details_lines.append(f"  Nominee {idx_n+1}:")
-                            for nkey, nval in nominee.items():
-                                if hasattr(nval, 'name'):
-                                    details_lines.append(f"    {nkey}: Uploaded")
-                                else:
-                                    details_lines.append(f"    {nkey}: {nval}")
-                    with open(os.path.join(member_folder, "details.txt"), "w", encoding="utf-8") as f:
-                        f.write('\n'.join(details_lines))
-                    # Write files from session_state
-                    # Minor
-                    if member.get('age', 0) < 18:
-                        bc_bytes = st.session_state.get(f"member_{idx2}_birthcert_bytes")
-                        bc_fn = st.session_state.get(f"member_{idx2}_birthcert_filename")
-                        if bc_bytes and bc_fn:
-                            with open(os.path.join(member_folder, bc_fn), "wb") as f:
-                                f.write(bc_bytes)
-                        pan_bytes = st.session_state.get(f"member_{idx2}_minorpancard_bytes")
-                        pan_fn = st.session_state.get(f"member_{idx2}_minorpancard_filename")
-                        if pan_bytes and pan_fn:
-                            with open(os.path.join(member_folder, pan_fn), "wb") as f:
-                                f.write(pan_bytes)
-                        for idx_g, guardian in enumerate(docs.get('Guardians', [])):
-                            gpan_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_pan_bytes")
-                            gpan_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_pan_filename")
-                            if gpan_bytes and gpan_fn:
-                                with open(os.path.join(member_folder, gpan_fn), "wb") as f:
-                                    f.write(gpan_bytes)
-                            gaadhaar_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_bytes")
-                            gaadhaar_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_filename")
-                            if gaadhaar_bytes and gaadhaar_fn:
-                                with open(os.path.join(member_folder, gaadhaar_fn), "wb") as f:
-                                    f.write(gaadhaar_bytes)
-                            gbank_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_bytes")
-                            gbank_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_filename")
-                            if gbank_bytes and gbank_fn:
-                                with open(os.path.join(member_folder, gbank_fn), "wb") as f:
-                                    f.write(gbank_bytes)
-                        photo_bytes = st.session_state.get(f"member_{idx2}_passport_photo_bytes")
-                        photo_fn = st.session_state.get(f"member_{idx2}_passport_photo_filename")
-                        if photo_bytes and photo_fn:
-                            with open(os.path.join(member_folder, photo_fn), "wb") as f:
-                                f.write(photo_bytes)
-                    # Adult
-                    else:
-                        aadhaar_bytes = st.session_state.get(f"member_{idx2}_aadhaar_bytes")
-                        aadhaar_fn = st.session_state.get(f"member_{idx2}_aadhaar_filename")
-                        if aadhaar_bytes and aadhaar_fn:
-                            with open(os.path.join(member_folder, aadhaar_fn), "wb") as f:
-                                f.write(aadhaar_bytes)
-                        pan_bytes = st.session_state.get(f"member_{idx2}_pan_bytes")
-                        pan_fn = st.session_state.get(f"member_{idx2}_pan_filename")
-                        if pan_bytes and pan_fn:
-                            with open(os.path.join(member_folder, pan_fn), "wb") as f:
-                                f.write(pan_bytes)
-                        cheque_bytes = st.session_state.get(f"member_{idx2}_cheque_bytes")
-                        cheque_fn = st.session_state.get(f"member_{idx2}_cheque_filename")
-                        if cheque_bytes and cheque_fn:
-                            with open(os.path.join(member_folder, cheque_fn), "wb") as f:
-                                f.write(cheque_bytes)
-                        photo_bytes = st.session_state.get(f"member_{idx2}_passport_photo_bytes")
-                        photo_fn = st.session_state.get(f"member_{idx2}_passport_photo_filename")
-                        if photo_bytes and photo_fn:
-                            with open(os.path.join(member_folder, photo_fn), "wb") as f:
-                                f.write(photo_bytes)
-                        for idx_n, nominee in enumerate(docs.get('Nominees', [])):
-                            npan_bytes = st.session_state.get(f"member_{idx2}_nominee_{idx_n}_pan_bytes")
-                            npan_fn = st.session_state.get(f"member_{idx2}_nominee_{idx_n}_pan_filename")
-                            if npan_bytes and npan_fn:
-                                with open(os.path.join(member_folder, npan_fn), "wb") as f:
-                                    f.write(npan_bytes)
+                # In-memory zip
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                    for idx2, member in enumerate(members):
+                        name = member['name']
+                        member_folder = f"{family_head_folder}/{safe_name(name)}"
+                        details_lines = [
+                            f"Name: {name}",
+                            f"Age: {member.get('age', '')}",
+                        ]
+                        docs = member.get('docs', {})
+                        if member.get('age', 0) < 18:
+                            details_lines.append("Type: Minor")
+                            details_lines.append(f"Number of Guardians: {len(docs.get('Guardians', []))}")
+                            for idx_g, guardian in enumerate(docs.get('Guardians', [])):
+                                details_lines.append(f"  Guardian {idx_g+1}:")
+                                for gkey, gfile in guardian.items():
+                                    details_lines.append(f"    {gkey}: {'Uploaded' if gfile else 'Not uploaded'}")
+                            details_lines.append(f"Birth Certificate: {'Uploaded' if docs.get('Birth Certificate') else 'Not uploaded'}")
+                            details_lines.append(f"Minor PAN Card: {'Uploaded' if docs.get('Minor PAN Card (optional)') else 'Not uploaded'}")
+                        else:
+                            details_lines.append("Type: Adult")
+                            details_lines.append(f"E-Aadhaar: {'Uploaded' if docs.get('E-Aadhaar') else 'Not uploaded'}")
+                            details_lines.append(f"PAN Card: {'Uploaded' if docs.get('PAN Card') else 'Not uploaded'}")
+                            details_lines.append(f"Cancelled Cheque/Bank Statement: {'Uploaded' if docs.get('Cancelled Cheque/Bank Statement') else 'Not uploaded'}")
+                            details_lines.append(f"Passport Size Photo: {'Uploaded' if docs.get('Passport Size Photo') else 'Not uploaded'}")
+                            details_lines.append(f"Email: {docs.get('Email', '')}")
+                            details_lines.append(f"Phone: {docs.get('Phone', '')}")
+                            details_lines.append(f"Mother Name: {docs.get('Mother Name', '')}")
+                            details_lines.append(f"Place of Birth: {docs.get('Place of Birth', '')}")
+                            nominee_list = docs.get('Nominees', [])
+                            details_lines.append(f"Number of Nominees: {len(nominee_list)}")
+                            for idx_n, nominee in enumerate(nominee_list):
+                                details_lines.append(f"  Nominee {idx_n+1}:")
+                                for nkey, nval in nominee.items():
+                                    if hasattr(nval, 'name'):
+                                        details_lines.append(f"    {nkey}: Uploaded")
+                                    else:
+                                        details_lines.append(f"    {nkey}: {nval}")
+                        # Write details.txt into zip
+                        zipf.writestr(f"{member_folder}/details.txt", '\n'.join(details_lines))
+                        # Add files from session_state
+                        # Minor files
+                        if member.get('age', 0) < 18:
+                            bc_bytes = st.session_state.get(f"member_{idx2}_birthcert_bytes")
+                            bc_fn = st.session_state.get(f"member_{idx2}_birthcert_filename")
+                            if bc_bytes and bc_fn:
+                                zipf.writestr(f"{member_folder}/{bc_fn}", bc_bytes)
+                            pan_bytes = st.session_state.get(f"member_{idx2}_minorpancard_bytes")
+                            pan_fn = st.session_state.get(f"member_{idx2}_minorpancard_filename")
+                            if pan_bytes and pan_fn:
+                                zipf.writestr(f"{member_folder}/{pan_fn}", pan_bytes)
+                            for idx_g, guardian in enumerate(docs.get('Guardians', [])):
+                                gpan_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_pan_bytes")
+                                gpan_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_pan_filename")
+                                if gpan_bytes and gpan_fn:
+                                    zipf.writestr(f"{member_folder}/guardian_{idx_g+1}_{gpan_fn}", gpan_bytes)
+                                gaadhaar_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_bytes")
+                                gaadhaar_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_aadhaar_filename")
+                                if gaadhaar_bytes and gaadhaar_fn:
+                                    zipf.writestr(f"{member_folder}/guardian_{idx_g+1}_{gaardhaar_fn}", gaadhaar_bytes)
+                                gbank_bytes = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_bytes")
+                                gbank_fn = st.session_state.get(f"member_{idx2}_guardian_{idx_g}_bank_filename")
+                                if gbank_bytes and gbank_fn:
+                                    zipf.writestr(f"{member_folder}/guardian_{idx_g+1}_{gbank_fn}", gbank_bytes)
+                            photo_bytes = st.session_state.get(f"member_{idx2}_passport_photo_bytes")
+                            photo_fn = st.session_state.get(f"member_{idx2}_passport_photo_filename")
+                            if photo_bytes and photo_fn:
+                                zipf.writestr(f"{member_folder}/{photo_fn}", photo_bytes)
+                        # Adult files
+                        else:
+                            aadhaar_bytes = st.session_state.get(f"member_{idx2}_aadhaar_bytes")
+                            aadhaar_fn = st.session_state.get(f"member_{idx2}_aadhaar_filename")
+                            if aadhaar_bytes and aadhaar_fn:
+                                zipf.writestr(f"{member_folder}/{aadhaar_fn}", aadhaar_bytes)
+                            pan_bytes = st.session_state.get(f"member_{idx2}_pan_bytes")
+                            pan_fn = st.session_state.get(f"member_{idx2}_pan_filename")
+                            if pan_bytes and pan_fn:
+                                zipf.writestr(f"{member_folder}/{pan_fn}", pan_bytes)
+                            cheque_bytes = st.session_state.get(f"member_{idx2}_cheque_bytes")
+                            cheque_fn = st.session_state.get(f"member_{idx2}_cheque_filename")
+                            if cheque_bytes and cheque_fn:
+                                zipf.writestr(f"{member_folder}/{cheque_fn}", cheque_bytes)
+                            photo_bytes = st.session_state.get(f"member_{idx2}_passport_photo_bytes")
+                            photo_fn = st.session_state.get(f"member_{idx2}_passport_photo_filename")
+                            if photo_bytes and photo_fn:
+                                zipf.writestr(f"{member_folder}/{photo_fn}", photo_bytes)
+                            for idx_n, nominee in enumerate(docs.get('Nominees', [])):
+                                npan_bytes = st.session_state.get(f"member_{idx2}_nominee_{idx_n}_pan_bytes")
+                                npan_fn = st.session_state.get(f"member_{idx2}_nominee_{idx_n}_pan_filename")
+                                if npan_bytes and npan_fn:
+                                    zipf.writestr(f"{member_folder}/nominee_{idx_n+1}_{npan_fn}", npan_bytes)
+
                 zip_name = f"{safe_name(st.session_state['family_head_name'])}_onboarding.zip"
-                zip_path = os.path.join(family_head_folder, zip_name)
-                with zipfile.ZipFile(zip_path, "w") as zipf:
-                    for root, _, files in os.walk(base_dir):
-                        for file in files:
-                            full_path = os.path.join(root, file)
-                            arcname = os.path.relpath(full_path, os.path.dirname(base_dir))
-                            zipf.write(full_path, arcname)
-                with open(zip_path, 'rb') as f:
-                    st.download_button("⬇️ Download All Documents (.zip)", f, file_name=zip_name, mime='application/zip')
-                    file_bytes = f.read()
+                zip_buffer.seek(0)
+                st.download_button("⬇️ Download All Documents (.zip)", zip_buffer, file_name=zip_name, mime='application/zip')
 
                 st.info("Uploading to OneDrive...")
+                zip_buffer.seek(0)
                 onedrive_link = upload_to_onedrive(
-                    file_bytes,
+                    zip_buffer.read(),
                     ["Client Data", safe_name(st.session_state['family_head_name'])],
                     zip_name
                 )
@@ -522,18 +505,17 @@ if members:
                     "Best regards,\nSSS Distributors Onboarding Team"
                 )
                 emails_ok = send_email_graph_api(
-                    EMAIL_ADDRESS, subject, admin_body, attachment_bytes=file_bytes, attachment_filename=zip_name
+                    EMAIL_ADDRESS, subject, admin_body, attachment_bytes=zip_buffer.getvalue(), attachment_filename=zip_name
                 )
                 if applicant_email:
                     emails_ok = emails_ok and send_email_graph_api(
-                        applicant_email, subject, applicant_body, attachment_bytes=file_bytes, attachment_filename=zip_name
+                        applicant_email, subject, applicant_body, attachment_bytes=zip_buffer.getvalue(), attachment_filename=zip_name
                     )
                 if emails_ok:
                     st.success("Confirmation emails sent!")
                 else:
                     st.error("Failed to send emails (see above for details).")
 
-                shutil.rmtree(family_head_folder, ignore_errors=True)
             st.markdown("""
                 ### Next Steps
                 - You'll receive an AOF (Account Opening Form) shortly for confirmation.
